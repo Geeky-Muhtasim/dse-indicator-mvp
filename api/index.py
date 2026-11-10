@@ -135,7 +135,7 @@ def explain(values: Dict[str, float]) -> dict:
 
 def placement(score: float) -> dict:
     """Where a score would sit among today's universe, and the signal and odds that implies."""
-    rows = load("signals")["rows"]
+    rows = [r for r in load("signals")["rows"] if r["signal"] != "NR"]
     meta = load("meta")
     n = len(rows)
     below = sum(1 for r in rows if r["score"] < score)
@@ -180,13 +180,14 @@ def get_signals(signal: Optional[str] = None, q: Optional[str] = None, limit: in
 def get_stock(symbol: str):
     symbol = symbol.upper()
     feats = load("features")
-    if symbol not in feats["values"]:
-        raise HTTPException(404, f"{symbol} is not in today's universe")
-    row = next(r for r in load("signals")["rows"] if r["symbol"] == symbol)
+    row = next((r for r in load("signals")["rows"] if r["symbol"] == symbol), None)
+    if row is None:
+        raise HTTPException(404, f"{symbol} has not traded on DSE in the last 20 sessions")
     t0 = time.perf_counter()
-    ex = explain(feats["values"][symbol])
+    # Not-rated stocks (illiquid, new, untraded) get price history but no model explanation.
+    ex = explain(feats["values"][symbol]) if symbol in feats["values"] else None
     return {"asof": feats["asof"], "signal": row, "history": load("history")["data"].get(symbol, []),
-            "historyCols": load("history")["cols"], "features": feats["values"][symbol],
+            "historyCols": load("history")["cols"], "features": feats["values"].get(symbol),
             "explanation": ex, "families": feats["families"], "ranges": feats["ranges"],
             "computeMs": round((time.perf_counter() - t0) * 1000, 1)}
 
@@ -201,7 +202,7 @@ def post_score(req: ScoreRequest):
     feats = load("features")
     base_vals = feats["values"].get(req.symbol.upper())
     if base_vals is None:
-        raise HTTPException(404, f"{req.symbol} is not in today's universe")
+        raise HTTPException(404, f"{req.symbol} is not rated today, so it cannot be scored")
     unknown = set(req.overrides) - set(base_vals)
     if unknown:
         raise HTTPException(422, f"Unknown features: {sorted(unknown)}")

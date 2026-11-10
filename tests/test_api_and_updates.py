@@ -130,3 +130,17 @@ def test_reference_factors_recover_exact_bonus():
     rf = reference_factors(raw, ref)
     assert len(rf) == 1 and rf["Date"].iloc[0] == d[2]
     assert rf["factor"].iloc[0] == pytest.approx(1 / 1.15)
+
+
+def test_not_rated_stocks_are_listed_but_not_scored(client):
+    rows = client.get("/api/signals").json()["rows"]
+    nr = [r for r in rows if r["signal"] == "NR"]
+    if not nr:
+        pytest.skip("every listed stock is rated today")
+    assert all(r["reason"] in {"illiquid", "new", "not_traded", "incomplete"} for r in nr)
+    stock = client.get(f"/api/stock/{nr[0]['symbol']}").json()
+    assert stock["explanation"] is None and stock["signal"]["signal"] == "NR"
+    assert client.post("/api/score", json={"symbol": nr[0]["symbol"], "overrides": {}}).status_code == 404
+    # placement ignores unrated rows
+    rated = next(r for r in rows if r["signal"] != "NR")
+    assert client.post("/api/score", json={"symbol": rated["symbol"], "overrides": {}}).status_code == 200

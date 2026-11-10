@@ -10,7 +10,24 @@ export const SIGNAL: Record<string, Pair> = {
   BUY: { en: "Buy", bn: "কিনুন" },
   HOLD: { en: "Hold", bn: "ধরে রাখুন" },
   AVOID: { en: "Avoid", bn: "এড়িয়ে চলুন" },
+  NR: { en: "Not rated", bn: "রেটিং নেই" },
 };
+
+/** Why a stock has no call, in both languages. */
+export function reasonText(reason: string | undefined, medTurnover?: number | null, lastTraded?: string): Pair {
+  switch (reason) {
+    case "illiquid": {
+      const lakh = medTurnover != null ? (medTurnover / 1e5).toFixed(1) : "?";
+      return { en: `Illiquid: median turnover Tk ${lakh} lakh a day`, bn: toBn(`কম লেনদেন: দৈনিক মধ্যমা ৳ ${lakh} লাখ`) };
+    }
+    case "new":
+      return { en: "Too little history (under 20 sessions)", bn: "পর্যাপ্ত ইতিহাস নেই (২০ সেশনের কম)" };
+    case "not_traded":
+      return { en: `No trade in the latest session (last ${lastTraded ?? "?"})`, bn: toBn(`সর্বশেষ সেশনে লেনদেন হয়নি (শেষ ${lastTraded ?? "?"})`) };
+    default:
+      return { en: "Not enough data to score", bn: "স্কোর করার মতো তথ্য নেই" };
+  }
+}
 
 export const FAMILY: Record<string, Pair> = {
   Momentum: { en: "Momentum", bn: "গতি" },

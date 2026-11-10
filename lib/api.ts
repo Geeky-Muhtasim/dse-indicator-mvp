@@ -3,13 +3,16 @@ import { useEffect, useState } from "react";
 
 export type Driver = { feature: string; value: number; shap: number };
 export type SignalRow = {
-  symbol: string; close: number; chg1d: number | null; signal: "BUY" | "HOLD" | "AVOID";
+  symbol: string; close: number; chg1d: number | null; signal: "BUY" | "HOLD" | "AVOID" | "NR";
   score: number; rank: number; pct: number; decile: number; odds: number | null;
   meanExcess: number | null; fillRisk: boolean; for: Driver[]; against: Driver[];
+  // only on not-rated rows
+  reason?: "illiquid" | "new" | "not_traded" | "incomplete"; lastTraded?: string; medTurnover?: number | null;
 };
 export type Meta = {
   asof: string; generatedAt: string; universe: number;
-  counts: { BUY: number; HOLD: number; AVOID: number };
+  counts: { BUY: number; HOLD: number; AVOID: number; NR?: number };
+  unratedReasons?: Record<string, number>; liquidityCut?: number | null;
   regime: { breadth_20: number; mkt_ret_10: number; risk_off: boolean };
   horizon: number; roundTripCost: number; buyTopPct: number; avoidBottomPct: number;
   model: { version: string; trainedThrough: string; trainRows: number; oosIc: number; promoted: boolean };

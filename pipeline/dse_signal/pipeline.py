@@ -147,7 +147,8 @@ def score(cfg: Config | None = None, log=print, raw=None, panel=None) -> dict:
     reg = {k: (bool(v) if isinstance(v, (bool, np.bool_)) else round(float(v), 5)) for k, v in reg.items()}
 
     export.write_app_data(APP_DIR, cfg=cfg, panel=panel, raw=raw, sig=sig, reg=reg,
-                          metrics_block=metrics_block, booster=model.model.booster_, model_info=info)
+                          metrics_block=metrics_block, booster=model.model.booster_, model_info=info,
+                          prepared=data.prepare(raw, cfg))
     counts = sig["signal"].value_counts().to_dict()
     log(f"Scored {asof.date()}: {counts.get('BUY', 0)} Buy, {counts.get('AVOID', 0)} Avoid, "
         f"{'risk-off' if reg['risk_off'] else 'normal'} regime")

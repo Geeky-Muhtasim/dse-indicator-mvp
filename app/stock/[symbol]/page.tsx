@@ -5,11 +5,11 @@ import { LineChart, VolumeBars } from "@/components/charts";
 import { L, V, useLang } from "@/components/lang";
 import { ErrorBox, Loading, PageHead, SignalChip } from "@/components/ui";
 import { api, useApi, type Driver, type Explanation, type Placement, type SignalRow } from "@/lib/api";
-import { FAMILY, SIGNAL, dateLabel, describe, money, pct, toBn } from "@/lib/i18n";
+import { FAMILY, SIGNAL, dateLabel, describe, money, pct, reasonText, toBn } from "@/lib/i18n";
 
 type StockResp = {
   asof: string; signal: SignalRow; history: (string | number | null)[][]; historyCols: string[];
-  features: Record<string, number>; explanation: Explanation; families: Record<string, string>;
+  features: Record<string, number> | null; explanation: Explanation | null; families: Record<string, string>;
   ranges: Record<string, [number, number]>; computeMs: number;
 };
 type ScoreResp = Explanation & { placement: Placement; computeMs: number };
@@ -90,9 +90,51 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
     );
   };
 
-  const forTxt = s?.for[0] ? describe(s.for[0].feature, s.for[0].value) : null;
-  const forTxt2 = s?.for[1] ? describe(s.for[1].feature, s.for[1].value) : null;
-  const agTxt = s?.against[0] ? describe(s.against[0].feature, s.against[0].value) : null;
+  const forTxt = s?.for?.[0] ? describe(s.for[0].feature, s.for[0].value) : null;
+  const forTxt2 = s?.for?.[1] ? describe(s.for[1].feature, s.for[1].value) : null;
+  const agTxt = s?.against?.[0] ? describe(s.against[0].feature, s.against[0].value) : null;
+
+  // Listed but not rated (illiquid, new, or untraded today): price only, and say why.
+  if (s && s.signal === "NR") {
+    const why = reasonText(s.reason, s.medTurnover, s.lastTraded);
+    return (
+      <>
+        <PageHead
+          crumb={<><Link href="/"><L en="Today's signals" bn="আজকের সংকেত" /></Link> › <L en="Stock analysis" bn="শেয়ার বিশ্লেষণ" /> {data && <span className="en"> · data to {dateLabel(data.asof).en}</span>}</>}
+          title={
+            <span style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap" }}>
+              <span className="en" style={{ fontSize: 44, lineHeight: 1.1 }}>{sym}</span>
+              <span className="num" style={{ fontSize: 28, color: "var(--indigo)" }}><V p={money(s.close)} /></span>
+            </span>
+          }
+          actions={<span className="chip chip-NR" style={{ minHeight: 44, padding: "8px 16px", fontSize: 18, alignItems: "center" }}><V p={SIGNAL.NR} /></span>}
+        />
+        <div className="content">
+          <section className="okband" style={{ background: "var(--panel)", borderColor: "var(--border)", color: "var(--ink)" }}>
+            <span style={{ lineHeight: 1.45 }}>
+              <b><L p={why} /></b>
+              <span className="sub" style={{ fontSize: 13, marginTop: 4 }}>
+                The model only rates stocks that trade enough to buy and sell near the quoted price and have at least 20 sessions of history. Signals for the rest would look precise but not be tradeable. The cut is recomputed daily, so this stock is rated as soon as it qualifies.
+              </span>
+            </span>
+          </section>
+          <section className="card" aria-label="Price">
+            <div className="card-head">
+              <h2><L en="Price and volume" bn="দর ও লেনদেন" /> <span className="en-inline">· last {hist.length} sessions</span></h2>
+              <span className="legend"><span><span className="sw" style={{ height: 2, background: "#262B6B" }} />Close</span><span><span className="sw" style={{ height: 0, borderTop: "2px dashed #4A6458" }} />20-day average</span></span>
+            </div>
+            {hist.length > 1 ? (
+              <div style={{ marginTop: 12 }}>
+                <LineChart ariaLabel={`${sym} closing price over ${hist.length} sessions`} labels={labels}
+                  series={[{ name: "20-day avg", color: "#4A6458", dash: "5 4", values: ma }, { name: "Close", color: "#262B6B", values: closes }]} />
+                <VolumeBars values={vols} />
+              </div>
+            ) : <p className="note"><L en="Not enough price history to chart." bn="চার্ট দেখানোর মতো যথেষ্ট ইতিহাস নেই।" /></p>}
+          </section>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -145,7 +187,7 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
               <p className="note" style={{ marginTop: 4 }}><L en="Move an input: the backend re-scores and re-explains this stock with the same model." bn="একটি মান বদলান, ব্যাকএন্ড একই মডেলে নতুন স্কোর ও কারণ দেবে।" /></p>
             </div>
             {data && KNOBS.map((k) => {
-              const v = over[k.f] ?? data.features[k.f];
+              const v = over[k.f] ?? data.features?.[k.f] ?? 0;
               return (
                 <div className="slider" key={k.f}>
                   <label htmlFor={`k-${k.f}`}><span><L en={k.en} bn={k.bn} /></span><span className="num-en">{k.show(v)}</span></label>

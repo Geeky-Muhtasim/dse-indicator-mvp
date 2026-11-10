@@ -5,9 +5,9 @@ import { useMemo, useState } from "react";
 import { L, V, useLang } from "@/components/lang";
 import { ErrorBox, Loading, PageHead, ScoreBar, SignalChip } from "@/components/ui";
 import { useApi, type Meta, type SignalRow } from "@/lib/api";
-import { count, dateLabel, describe, money, pct, toBn } from "@/lib/i18n";
+import { count, dateLabel, describe, money, pct, reasonText, toBn } from "@/lib/i18n";
 
-type Filter = "ALL" | "BUY" | "HOLD" | "AVOID";
+type Filter = "ALL" | "BUY" | "HOLD" | "AVOID" | "NR";
 const PAGE = 40;
 
 export default function SignalsPage() {
@@ -38,7 +38,7 @@ export default function SignalsPage() {
             ? <>আজ {n(m.counts.BUY)}টি শেয়ার কেনার তালিকায়, {n(m.counts.AVOID)}টি এড়ানোর।</>
             : <>{m.counts.BUY} stocks rank as Buy today, {m.counts.AVOID} as Avoid.</>
         ) : <L en="Today's signals" bn="আজকের সংকেত" />}
-        lede={m && `${m.counts.BUY} Buy, ${m.counts.HOLD} Hold and ${m.counts.AVOID} Avoid across ${m.universe} liquid DSE equities, ranked on the next ${m.horizon} sessions.`}
+        lede={m && `${m.universe} of ${m.universe + (m.counts.NR ?? 0)} DSE company stocks are rated on the next ${m.horizon} sessions: ${m.counts.BUY} Buy, ${m.counts.HOLD} Hold, ${m.counts.AVOID} Avoid. ${m.counts.NR ?? 0} are listed without a call.`}
         actions={
           <>
             <a className="btn btn-ghost" href="/api/signals" download="dse-signals.json"><L en="Download data" bn="ডেটা নামান" stack /></a>
@@ -80,9 +80,9 @@ export default function SignalsPage() {
         <section className="card" style={{ padding: 0, overflow: "hidden" }} aria-label="Signals">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", flexWrap: "wrap", gap: 12 }}>
             <div className="seg" role="group" aria-label="Filter by signal">
-              {(["ALL", "BUY", "HOLD", "AVOID"] as Filter[]).map((f) => {
-                const c = f === "ALL" ? m?.universe : m?.counts[f];
-                const lab = { ALL: { en: "All", bn: "সব" }, BUY: { en: "Buy", bn: "কিনুন" }, HOLD: { en: "Hold", bn: "ধরে রাখুন" }, AVOID: { en: "Avoid", bn: "এড়িয়ে চলুন" } }[f];
+              {(["ALL", "BUY", "HOLD", "AVOID", "NR"] as Filter[]).map((f) => {
+                const c = f === "ALL" ? (m ? m.universe + (m.counts.NR ?? 0) : undefined) : m?.counts[f];
+                const lab = { ALL: { en: "All", bn: "সব" }, BUY: { en: "Buy", bn: "কিনুন" }, HOLD: { en: "Hold", bn: "ধরে রাখুন" }, AVOID: { en: "Avoid", bn: "এড়িয়ে চলুন" }, NR: { en: "Not rated", bn: "রেটিং নেই" } }[f];
                 return (
                   <button key={f} type="button" aria-pressed={filter === f} onClick={() => { setFilter(f); setShown(PAGE); }}>
                     {lang === "bi" ? lab.bn : lab.en} {c != null && <span className="num">{n(c)}</span>}
@@ -113,17 +113,18 @@ export default function SignalsPage() {
               <tbody>
                 {sig.loading && <tr><td colSpan={8}><Loading h={300} /></td></tr>}
                 {rows.slice(0, shown).map((r) => {
-                  const main = r.signal === "AVOID" ? r.against[0] ?? r.for[0] : r.for[0] ?? r.against[0];
-                  const d = main ? describe(main.feature, main.value) : null;
+                  const nr = r.signal === "NR";
+                  const main = nr ? null : r.signal === "AVOID" ? r.against[0] ?? r.for[0] : r.for[0] ?? r.against[0];
+                  const d = nr ? reasonText(r.reason, r.medTurnover, r.lastTraded) : main ? describe(main.feature, main.value) : null;
                   return (
-                    <tr key={r.symbol} className="click" onClick={() => router.push(`/stock/${r.symbol}`)}>
-                      <td className="num muted">{n(r.rank)}</td>
+                    <tr key={r.symbol} className="click" onClick={() => router.push(`/stock/${r.symbol}`)} style={nr ? { color: "var(--muted)" } : undefined}>
+                      <td className="num muted">{nr ? "" : n(r.rank)}</td>
                       <td><Link className="tick" href={`/stock/${r.symbol}`} onClick={(e) => e.stopPropagation()}>{r.symbol}</Link>{r.fillRisk && <span className="sub down">limit move</span>}</td>
                       <td className="r price"><V p={money(r.close)} /></td>
                       <td className={`r num ${r.chg1d == null ? "" : r.chg1d > 0 ? "up" : r.chg1d < 0 ? "down" : "muted"}`}><V p={pct(r.chg1d, 2, true)} /></td>
                       <td><SignalChip s={r.signal} /></td>
-                      <td><ScoreBar score={r.score} /></td>
-                      <td className="r num" style={{ fontWeight: 500 }}><V p={pct(r.odds, 0)} /></td>
+                      <td>{nr ? <span className="muted" style={{ fontSize: 13 }}><L en="not scored" bn="স্কোর নেই" /></span> : <ScoreBar score={r.score} />}</td>
+                      <td className="r num" style={{ fontWeight: 500 }}>{nr ? "" : <V p={pct(r.odds, 0)} />}</td>
                       <td style={{ lineHeight: 1.35, minWidth: 260 }}>{d && <L p={d} stack />}</td>
                     </tr>
                   );
@@ -137,15 +138,16 @@ export default function SignalsPage() {
           <div className="mcards" role="list">
             {sig.loading && <div style={{ padding: 16 }}><Loading h={240} /></div>}
             {rows.slice(0, shown).map((r) => {
-              const main = r.signal === "AVOID" ? r.against[0] ?? r.for[0] : r.for[0] ?? r.against[0];
-              const d = main ? describe(main.feature, main.value) : null;
+              const nr = r.signal === "NR";
+              const main = nr ? null : r.signal === "AVOID" ? r.against[0] ?? r.for[0] : r.for[0] ?? r.against[0];
+              const d = nr ? reasonText(r.reason, r.medTurnover, r.lastTraded) : main ? describe(main.feature, main.value) : null;
               return (
                 <Link key={r.symbol} href={`/stock/${r.symbol}`} className="mcard" role="listitem">
-                  <span className="top"><span className="rk num">{n(r.rank)}</span><span className="tick" style={{ color: "var(--indigo)", textDecoration: "underline" }}>{r.symbol}</span><SignalChip s={r.signal} /></span>
+                  <span className="top"><span className="rk num">{nr ? "" : n(r.rank)}</span><span className="tick" style={{ color: "var(--indigo)", textDecoration: "underline" }}>{r.symbol}</span><SignalChip s={r.signal} /></span>
                   <span className="right"><span className="price" style={{ display: "block" }}><V p={money(r.close)} /></span>
                     <span className={`num ${r.chg1d == null ? "" : r.chg1d > 0 ? "up" : r.chg1d < 0 ? "down" : "muted"}`} style={{ fontSize: 13 }}><V p={pct(r.chg1d, 2, true)} /></span></span>
                   {d && <span className="why"><L p={d} stack /></span>}
-                  <span className="meta"><ScoreBar score={r.score} /><span><L en="Odds" bn="আস্থা" /> <b className="num" style={{ color: "var(--ink)" }}><V p={pct(r.odds, 0)} /></b></span></span>
+                  {!nr && <span className="meta"><ScoreBar score={r.score} /><span><L en="Odds" bn="আস্থা" /> <b className="num" style={{ color: "var(--ink)" }}><V p={pct(r.odds, 0)} /></b></span></span>}
                 </Link>
               );
             })}
@@ -154,6 +156,7 @@ export default function SignalsPage() {
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 20px 16px" }}>
             <p style={{ margin: 0, fontSize: 13, color: "var(--muted)", maxWidth: 760 }}>
+              {m?.liquidityCut != null && <><L en={`Not rated: below the liquidity cut (Tk ${(m.liquidityCut / 1e5).toFixed(1)} lakh median daily turnover, recomputed daily), under 20 sessions of history, or no trade in the latest session. Signals for these would not be reliable or tradeable.`} bn={toBn(`রেটিং নেই: তারল্য সীমার নিচে (দৈনিক মধ্যমা লেনদেন ৳ ${(m.liquidityCut / 1e5).toFixed(1)} লাখ), ২০ সেশনের কম ইতিহাস, বা সর্বশেষ সেশনে লেনদেন হয়নি।`)} />{" "}</>}
               <L en={`Odds: how often stocks in this score decile beat the market over ${m?.horizon ?? 5} sessions, out of sample. Not investment advice.`}
                  bn="আস্থা: এই স্কোর দশমাংশের শেয়ার আউট-অব-স্যাম্পলে কতবার বাজারকে হারিয়েছে। বিনিয়োগ পরামর্শ নয়।" />
             </p>

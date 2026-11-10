@@ -64,7 +64,7 @@ def model_json(booster, feature_names: list[str]) -> dict:
 
 def write_app_data(out_dir: Path, *, cfg: Config, panel: pd.DataFrame, raw: pd.DataFrame,
                    sig: pd.DataFrame, reg: dict, metrics_block: dict, booster,
-                   model_info: dict) -> None:
+                   model_info: dict, prepared: pd.DataFrame | None = None) -> None:
     out_dir = Path(out_dir)
     asof = sig["Date"].iloc[0]
     n = len(sig)
@@ -86,7 +86,11 @@ def write_app_data(out_dir: Path, *, cfg: Config, panel: pd.DataFrame, raw: pd.D
             "for": drv(r["drivers_for"]), "against": drv(r["drivers_against"]),
         })
     counts = sig["signal"].value_counts().to_dict()
-    _dump(out_dir / "signals.json", {"asof": str(asof.date()), "n": n, "rows": rows})
+
+    # Every other company stock DSE traded recently is listed too, with the reason it has no call.
+    unrated = _unrated_rows(prepared, raw, set(sig["Symbol"]), asof, cfg) if prepared is not None else []
+    reasons = pd.Series([u["reason"] for u in unrated]).value_counts().to_dict() if unrated else {}
+    _dump(out_dir / "signals.json", {"asof": str(asof.date()), "n": n, "rows": rows + unrated})
 
     # 2. Latest feature vector per stock (the what-if starting point) and slider ranges.
     day = panel[panel["Date"] == asof].set_index("Symbol")
@@ -97,9 +101,10 @@ def write_app_data(out_dir: Path, *, cfg: Config, panel: pd.DataFrame, raw: pd.D
 
     # 3. Price history for charts: last N sessions, close, volume and 20-day average.
     hist = {}
+    listed = set(day.index) | {u["symbol"] for u in unrated}
     recent = raw.sort_values("Date").groupby("Symbol").tail(HISTORY_SESSIONS + 19)
     for s, g in recent.groupby("Symbol"):
-        if s not in day.index:
+        if s not in listed:
             continue
         ma = g["Close"].rolling(20).mean()
         g = g.assign(ma20=ma).tail(HISTORY_SESSIONS)
@@ -127,7 +132,9 @@ def write_app_data(out_dir: Path, *, cfg: Config, panel: pd.DataFrame, raw: pd.D
         "asof": str(asof.date()),
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "universe": n,
-        "counts": {k: int(counts.get(k, 0)) for k in ("BUY", "HOLD", "AVOID")},
+        "counts": {k: int(counts.get(k, 0)) for k in ("BUY", "HOLD", "AVOID")} | {"NR": len(unrated)},
+        "unratedReasons": {k: int(v) for k, v in reasons.items()},
+        "liquidityCut": _f(_liq_cut(prepared, asof), 0) if prepared is not None else None,
         "regime": reg,
         "horizon": cfg.horizon,
         "roundTripCost": cfg.round_trip_cost,
@@ -136,3 +143,37 @@ def write_app_data(out_dir: Path, *, cfg: Config, panel: pd.DataFrame, raw: pd.D
         "model": model_info,
         "source": "Dhaka Stock Exchange end-of-day prices (history: StockNow adjusted export; updates: dsebd.org via bdshare)",
     })
+
+
+ACTIVE_SESSIONS = 20
+
+
+def _liq_cut(prepared: pd.DataFrame, asof) -> float | None:
+    d = prepared[(prepared["Date"] == asof) & prepared["in_universe"]]
+    return float(d["med_turnover_20"].min()) if len(d) else None
+
+
+def _unrated_rows(prepared: pd.DataFrame, raw: pd.DataFrame, rated: set, asof, cfg: Config) -> list:
+    """Company stocks traded in the last ACTIVE_SESSIONS sessions that get no Buy/Hold/Avoid call,
+    each with the reason: too illiquid, too little history, or no trade on the latest session."""
+    dates = np.sort(prepared["Date"].unique())
+    since = dates[max(0, len(dates) - ACTIVE_SESSIONS)]
+    eq = prepared[(prepared["kind"] == "equity") & (prepared["Date"] >= since) & ~prepared["Symbol"].isin(rated)]
+    last = eq.sort_values("Date").groupby("Symbol").tail(1)
+    prev = raw.sort_values("Date").groupby("Symbol")["Close"].apply(lambda c: c.iloc[-2] if len(c) > 1 else np.nan)
+    out = []
+    for r in last.sort_values("med_turnover_20", ascending=False).itertuples(index=False):
+        if r.Date < asof:
+            reason = "not_traded"
+        elif r.age < cfg.warmup_days:
+            reason = "new"
+        elif not r.in_universe:
+            reason = "illiquid"
+        else:
+            reason = "incomplete"
+        pc = prev.get(r.Symbol, np.nan)
+        out.append({"symbol": r.Symbol, "close": _f(r.Close, 2),
+                    "chg1d": _f(r.Close / pc - 1, 5) if r.Date == asof and np.isfinite(pc) and pc else None,
+                    "signal": "NR", "reason": reason, "lastTraded": str(pd.Timestamp(r.Date).date()),
+                    "medTurnover": _f(r.med_turnover_20, 0), "score": None, "rank": None})
+    return out
