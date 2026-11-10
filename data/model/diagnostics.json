@@ -1,0 +1,203 @@
+[
+  {
+    "horizon": 5,
+    "ic": 0.1394,
+    "ic_by_liquidity_tercile": {
+      "0": {
+        "ic": 0.1382,
+        "positive": 0.785,
+        "t": 4.83
+      },
+      "1": {
+        "ic": 0.1385,
+        "positive": 0.748,
+        "t": 4.89
+      },
+      "2": {
+        "ic": 0.1318,
+        "positive": 0.776,
+        "t": 4.77
+      }
+    },
+    "ic_vol_neutral": 0.1047,
+    "top10": {
+      "periods": 43,
+      "years": 0.9,
+      "turnover": 0.417,
+      "ann_gross": 0.2343,
+      "ann_net": 0.0311,
+      "ann_market": -0.1089,
+      "ann_vol_peers": -0.0209,
+      "ir_vs_market": 1.54,
+      "ir_vs_vol_peers": 0.91,
+      "t_vs_market": 1.46,
+      "t_vs_vol_peers": 0.86,
+      "beta": 0.57,
+      "alpha_gross_ann": 0.276
+    },
+    "band_10_30": {
+      "periods": 43,
+      "years": 0.9,
+      "turnover": 0.158,
+      "ann_gross": 0.1869,
+      "ann_net": 0.1088,
+      "ann_market": -0.1089,
+      "ann_vol_peers": -0.0176,
+      "ir_vs_market": 2.13,
+      "ir_vs_vol_peers": 1.8,
+      "t_vs_market": 2.02,
+      "t_vs_vol_peers": 1.71,
+      "beta": 0.54,
+      "alpha_gross_ann": 0.2342
+    },
+    "liquid_third_band": {
+      "periods": 43,
+      "years": 0.9,
+      "turnover": 0.235,
+      "ann_gross": 0.3254,
+      "ann_net": 0.1979,
+      "ann_market": -0.1495,
+      "ann_vol_peers": -0.0067,
+      "ir_vs_market": 2.62,
+      "ir_vs_vol_peers": 1.58,
+      "t_vs_market": 2.48,
+      "t_vs_vol_peers": 1.5,
+      "beta": 0.59,
+      "alpha_gross_ann": 0.381
+    }
+  },
+  {
+    "horizon": 10,
+    "ic": 0.1444,
+    "ic_by_liquidity_tercile": {
+      "0": {
+        "ic": 0.1497,
+        "positive": 0.828,
+        "t": 5.01
+      },
+      "1": {
+        "ic": 0.1283,
+        "positive": 0.77,
+        "t": 4.97
+      },
+      "2": {
+        "ic": 0.1422,
+        "positive": 0.794,
+        "t": 5.74
+      }
+    },
+    "ic_vol_neutral": 0.1083,
+    "top10": {
+      "periods": 21,
+      "years": 0.88,
+      "turnover": 0.602,
+      "ann_gross": 0.2356,
+      "ann_net": 0.0857,
+      "ann_market": -0.0092,
+      "ann_vol_peers": 0.0624,
+      "ir_vs_market": 1.04,
+      "ir_vs_vol_peers": 0.42,
+      "t_vs_market": 0.97,
+      "t_vs_vol_peers": 0.39,
+      "beta": 0.65,
+      "alpha_gross_ann": 0.2169
+    },
+    "band_10_30": {
+      "periods": 21,
+      "years": 0.88,
+      "turnover": 0.328,
+      "ann_gross": 0.2769,
+      "ann_net": 0.19,
+      "ann_market": -0.0092,
+      "ann_vol_peers": 0.0724,
+      "ir_vs_market": 1.9,
+      "ir_vs_vol_peers": 2.06,
+      "t_vs_market": 1.78,
+      "t_vs_vol_peers": 1.93,
+      "beta": 0.56,
+      "alpha_gross_ann": 0.2491
+    },
+    "liquid_third_band": {
+      "periods": 21,
+      "years": 0.88,
+      "turnover": 0.376,
+      "ann_gross": 0.3135,
+      "ann_net": 0.2119,
+      "ann_market": -0.0944,
+      "ann_vol_peers": 0.1079,
+      "ir_vs_market": 1.81,
+      "ir_vs_vol_peers": 0.66,
+      "t_vs_market": 1.7,
+      "t_vs_vol_peers": 0.62,
+      "beta": 0.28,
+      "alpha_gross_ann": 0.3042
+    }
+  },
+  {
+    "horizon": 20,
+    "ic": 0.1331,
+    "ic_by_liquidity_tercile": {
+      "0": {
+        "ic": 0.1302,
+        "positive": 0.749,
+        "t": 4.54
+      },
+      "1": {
+        "ic": 0.1007,
+        "positive": 0.779,
+        "t": 4.16
+      },
+      "2": {
+        "ic": 0.1322,
+        "positive": 0.834,
+        "t": 6.4
+      }
+    },
+    "ic_vol_neutral": 0.1005,
+    "top10": {
+      "periods": 10,
+      "years": 0.83,
+      "turnover": 0.7,
+      "ann_gross": 0.1599,
+      "ann_net": 0.0761,
+      "ann_market": 0.0672,
+      "ann_vol_peers": 0.1023,
+      "ir_vs_market": -0.02,
+      "ir_vs_vol_peers": -0.69,
+      "t_vs_market": -0.01,
+      "t_vs_vol_peers": -0.63,
+      "beta": 0.63,
+      "alpha_gross_ann": 0.1049
+    },
+    "band_10_30": {
+      "periods": 10,
+      "years": 0.83,
+      "turnover": 0.4,
+      "ann_gross": 0.1587,
+      "ann_net": 0.1101,
+      "ann_market": 0.0672,
+      "ann_vol_peers": 0.1194,
+      "ir_vs_market": 0.26,
+      "ir_vs_vol_peers": -0.23,
+      "t_vs_market": 0.24,
+      "t_vs_vol_peers": -0.21,
+      "beta": 0.5,
+      "alpha_gross_ann": 0.1121
+    },
+    "liquid_third_band": {
+      "periods": 10,
+      "years": 0.83,
+      "turnover": 0.4,
+      "ann_gross": 0.0786,
+      "ann_net": 0.0333,
+      "ann_market": -0.054,
+      "ann_vol_peers": 0.1871,
+      "ir_vs_market": 0.63,
+      "ir_vs_vol_peers": -1.5,
+      "t_vs_market": 0.57,
+      "t_vs_vol_peers": -1.37,
+      "beta": 0.37,
+      "alpha_gross_ann": 0.0947
+    }
+  }
+]
