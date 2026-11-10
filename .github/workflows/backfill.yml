@@ -8,7 +8,7 @@ on:
     inputs:
       start:
         description: "First date to fetch (YYYY-MM-DD)"
-        default: "2020-01-01"
+        default: "2024-11-01"
       min_consistency:
         description: "Share of overlapping symbols that must match the existing history"
         default: "0.9"

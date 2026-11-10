@@ -21,7 +21,7 @@ def main() -> int:
     up.add_argument("--force-score", action="store_true", help="rescore even if no new data")
     sub.add_parser("score", help="rescore the latest stored session")
     bf = sub.add_parser("backfill", help="rebuild multi-year history from DSE, then retrain")
-    bf.add_argument("--start", default="2020-01-01", help="first date to fetch (YYYY-MM-DD)")
+    bf.add_argument("--start", default="2024-11-01", help="first date to fetch (YYYY-MM-DD)")
     bf.add_argument("--min-consistency", type=float, default=0.9,
                     help="share of overlapping symbols that must agree with the existing history")
     rt = sub.add_parser("retrain", help="validate and retrain the model")
