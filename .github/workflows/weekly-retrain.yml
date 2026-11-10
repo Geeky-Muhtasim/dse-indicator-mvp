@@ -1,0 +1,41 @@
+name: Weekly retrain
+
+# Friday 10:00 Dhaka, when the market is closed. Re-runs walk-forward validation on all
+# stored history and promotes the new model only if its out-of-sample rank IC is above zero.
+on:
+  schedule:
+    - cron: "0 4 * * 5"
+  workflow_dispatch:
+    inputs:
+      min_ic:
+        description: "Promote only above this out-of-sample rank IC"
+        default: "0.0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-update
+  cancel-in-progress: false
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+      - run: pip install -r pipeline/requirements.txt
+      - name: Validate and retrain
+        run: python pipeline/cli.py retrain --min-ic "${{ inputs.min_ic || '0.0' }}"
+      - run: python -m pytest -q
+      - name: Commit model and evidence
+        run: |
+          git config user.name "dse-signal-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/model data/app reports
+          git diff --cached --quiet || (git commit -m "model: weekly retrain $(date -u +%Y-%m-%d)" && git push)

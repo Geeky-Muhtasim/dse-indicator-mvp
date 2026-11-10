@@ -1,0 +1,6 @@
+pipeline/
+tests/
+reports/
+data/history/
+data/model/
+.github/
