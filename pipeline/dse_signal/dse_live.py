@@ -27,12 +27,36 @@ def _is_event(prev, ycp) -> bool:
     return gap > ABS_TOL and gap / prev > REL_TOL and FACTOR_MIN <= ycp / prev <= FACTOR_MAX
 
 
-def fetch_dse(start: date, end: date) -> pd.DataFrame:
-    """All instruments between two dates (inclusive) from dsebd.org, via bdshare."""
-    from bdshare import get_hist_data  # imported here so scoring never needs network deps
+def fetch_legacy_archive(start: date, end: date, timeout: int = 120) -> pd.DataFrame:
+    """DSE's day-end archive page (old.dsebd.org), all instruments, with a long timeout.
 
-    df = get_hist_data(start=start.isoformat(), end=end.isoformat())
-    df = df.reset_index()
+    The page is slow for wide date ranges but serves automated clients, unlike the newer
+    JSON API, which answers 403 to cloud runners. bdshare's own parser reads the table."""
+    from bdshare.stock import trading as T  # pinned version, see pipeline/requirements.txt
+    from bdshare.util.helper import _fetch_table
+
+    table = _fetch_table(
+        T.vs.DSE_LEGACY_URL + T.vs.DSE_DEA_URL,
+        params={"startDate": start.isoformat(), "endDate": end.isoformat(),
+                "inst": "All Instrument", "archive": "data"},
+        retries=2, pause=3.0, timeout=timeout, table_class=T._CLS_FIXED,
+    )
+    rows = T._parse_historical_rows(table)
+    return _normalise(pd.DataFrame(rows)) if rows else pd.DataFrame(columns=COLS + ["YCP"])
+
+
+def fetch_dse(start: date, end: date) -> pd.DataFrame:
+    """All instruments between two dates (inclusive): the archive page first, then bdshare's
+    own source selection as a fallback."""
+    try:
+        return fetch_legacy_archive(start, end)
+    except Exception:
+        from bdshare import get_hist_data  # imported here so scoring never needs network deps
+        return _normalise(get_hist_data(start=start.isoformat(), end=end.isoformat()).reset_index())
+
+
+def _normalise(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
     df.columns = [str(c).strip().lower() for c in df.columns]
     need = {"date", "symbol", "open", "high", "low", "close", "volume", "ycp"}
     missing = need - set(df.columns)
@@ -112,30 +136,40 @@ def update_history(history_path: Path, today: date | None = None, log=print) -> 
 
 
 # ---------------------------------------------------------------- multi-year backfill
-def fetch_range(start: date, end: date, chunk_days: int = 31, pause: float = 1.5, log=print) -> pd.DataFrame:
-    """Fetch a long range from DSE in month-sized chunks, retrying each chunk."""
+def fetch_range(start: date, end: date, chunk_days: int = 31, pause: float = 3.0, log=print) -> pd.DataFrame:
+    """Fetch a long range from the DSE archive. Each request covers up to a month; if it
+    times out it is split in half, down to a single day. Days that still fail are skipped
+    and reported rather than stopping the whole backfill."""
     import time
 
-    parts, cur = [], start
+    parts, failed = [], []
+
+    def grab(a: date, b: date) -> None:
+        try:
+            df = fetch_legacy_archive(a, b)
+            parts.append(df)
+            log(f"  {a} to {b}: {df['Date'].nunique() if len(df) else 0} sessions, {len(df):,} rows", flush=True)
+        except Exception as e:
+            days = (b - a).days + 1
+            if days > 1:
+                mid = a + timedelta(days=days // 2 - 1)
+                log(f"  {a} to {b}: {type(e).__name__}, splitting", flush=True)
+                time.sleep(pause)
+                grab(a, mid)
+                time.sleep(pause)
+                grab(mid + timedelta(days=1), b)
+            else:
+                failed.append(str(a))
+                log(f"  {a}: failed ({str(e)[:120]}), skipped", flush=True)
+        time.sleep(pause)
+
+    cur = start
     while cur <= end:
         stop = min(end, cur + timedelta(days=chunk_days - 1))
-        for attempt in range(4):
-            try:
-                df = fetch_dse(cur, stop)
-                parts.append(df)
-                log(f"  {cur} to {stop}: {df['Date'].nunique()} sessions, {len(df):,} rows")
-                break
-            except Exception as e:  # holidays-only chunks raise "no data"; network errors retry
-                msg = str(e)
-                if "No historical data" in msg or "No basic historical" in msg:
-                    log(f"  {cur} to {stop}: no sessions")
-                    break
-                if attempt == 3:
-                    raise RuntimeError(f"Chunk {cur} to {stop} failed after retries: {msg}") from e
-                time.sleep(5 * (attempt + 1))
-        time.sleep(pause)
+        grab(cur, stop)
         cur = stop + timedelta(days=1)
-    out = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+    out = pd.concat([p for p in parts if len(p)], ignore_index=True) if parts else pd.DataFrame(columns=COLS + ["YCP"])
+    out.attrs["failed_days"] = failed
     return out.drop_duplicates(["Symbol", "Date"], keep="last").sort_values(["Symbol", "Date"]).reset_index(drop=True)
 
 
@@ -185,12 +219,13 @@ def backfill(history_path: Path, start: date, end: date | None = None, min_consi
     import json
 
     end = end or date.today()
-    log(f"Backfilling DSE day-end data {start} to {end}")
+    log(f"Backfilling DSE day-end data {start} to {end}", flush=True)
     raw = fetch_range(start, end, log=log)
     if raw.empty:
         raise RuntimeError("DSE returned no data for the backfill range")
     adj, events = adjust_history(raw)
     report = {"start": str(start), "end": str(adj["Date"].max().date()), "rows": int(len(adj)),
+              "failed_days": raw.attrs.get("failed_days", []),
               "symbols": int(adj["Symbol"].nunique()), "sessions": int(adj["Date"].nunique()),
               "corporate_actions": int(len(events))}
     if history_path.exists():

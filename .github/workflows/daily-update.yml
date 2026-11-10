@@ -17,6 +17,10 @@ on:
 permissions:
   contents: write
 
+env:
+  PYTHONUNBUFFERED: "1"       # stream progress lines into the Actions log
+  BDSHARE_SOURCE: legacy      # DSE's newer JSON API answers 403 to GitHub runners
+
 concurrency:
   group: data-update
   cancel-in-progress: false
