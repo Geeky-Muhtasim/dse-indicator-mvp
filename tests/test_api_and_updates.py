@@ -81,3 +81,32 @@ def test_merge_back_adjusts_bonus_issue():
     assert out["Volume"].iloc[0] == pytest.approx(1000 / f, abs=1)
     # The day-over-day move across the ex-date is now the real +1.2%, not a fake -17% crash.
     assert out["Close"].iloc[3] / out["Close"].iloc[2] - 1 == pytest.approx(86 / 85 - 1, rel=1e-3)
+
+
+def test_vectorized_backfill_matches_daily_merge():
+    """adjust_history over a whole panel equals applying merge_adjusted one day at a time."""
+    from dse_signal.dse_live import adjust_history
+    d = pd.bdate_range("2026-01-05", periods=6)
+    raw = pd.DataFrame({
+        "Symbol": ["A"] * 6 + ["B"] * 6, "Date": list(d) * 2,
+        "Close": [100, 102, 85, 86, 87, 70, 50, 51, 52, 53, 54, 55.0],
+        # A: 20% bonus before day 3 (YCP 85 = 102/1.2), and another before day 6 (YCP 72.5 vs 87)
+        "YCP": [99, 100, 85, 85, 86, 72.5, 49, 50, 51, 52, 53, 54.0], "Volume": 1000.0,
+    })
+    raw["Open"] = raw["High"] = raw["Low"] = raw["Close"]
+    adj, ev = adjust_history(raw)
+    seed = raw[raw["Date"] == d[0]][["Symbol", "Date", "Open", "High", "Low", "Close", "Volume"]]
+    step, _ = merge_adjusted(seed, raw[raw["Date"] > d[0]])
+    a = adj.sort_values(["Symbol", "Date"])["Close"].to_numpy()
+    b = step.sort_values(["Symbol", "Date"])["Close"].to_numpy()
+    assert np.allclose(a, b, rtol=1e-6)
+    assert len(ev) == 2 and set(ev["symbol"]) == {"A"}
+
+
+def test_glitch_ycp_is_not_an_adjustment():
+    from dse_signal.dse_live import adjust_history
+    d = pd.bdate_range("2026-01-05", periods=3)
+    raw = pd.DataFrame({"Symbol": "A", "Date": d, "Close": [100, 101, 102.0], "YCP": [99, 0, 101.0], "Volume": 1.0})
+    raw["Open"] = raw["High"] = raw["Low"] = raw["Close"]
+    adj, ev = adjust_history(raw)
+    assert len(ev) == 0 and adj["Close"].tolist() == [100, 101, 102]

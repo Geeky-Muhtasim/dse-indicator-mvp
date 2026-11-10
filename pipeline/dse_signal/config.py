@@ -19,6 +19,11 @@ class Config:
     # Walk-forward validation.
     min_train_dates: int = 12          # label dates in the first training window
     test_block_dates: int = 5          # dates per out-of-sample block (= horizon by default)
+    # With multi-year history: train on at least a year first, and widen the test blocks so
+    # the walk-forward stays within max_folds refits (keeps CI runs to minutes).
+    long_history_dates: int = 200
+    long_min_train_dates: int = 240
+    max_folds: int = 36
 
     # Costs, in basis points per side. DSE brokerage and levies are roughly 30 to 50 bps,
     # plus slippage. These are assumptions: edit them to match your broker.

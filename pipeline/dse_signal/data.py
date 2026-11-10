@@ -14,6 +14,7 @@ REQUIRED = ["Symbol", "Date", "Open", "High", "Low", "Close", "Volume"]
 # Closed-end funds and bonds trade on DSE alongside ordinary shares. They behave differently
 # (NAV discounts, coupons), so they are kept out of the equity model.
 _BOND = re.compile(r"(PBOND|BOND|SUKUK|\dPB)$")
+_TBOND = re.compile(r"^(TB\d|BGTB|DBTB)")  # government treasury bonds listed on DSE
 _FUND = re.compile(r"(MF|MF\d|MF\dS\d)$")
 # Funds whose tickers do not follow the ...MF pattern. Extend this when new listings appear.
 _FUND_EXPLICIT = {
@@ -24,7 +25,7 @@ _FUND_EXPLICIT = {
 
 def classify_instrument(symbol: str) -> str:
     s = symbol.upper()
-    if _BOND.search(s):
+    if _BOND.search(s) or _TBOND.search(s):
         return "bond"
     if s in _FUND_EXPLICIT or _FUND.search(s):
         return "fund"

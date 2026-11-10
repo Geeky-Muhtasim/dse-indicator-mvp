@@ -16,10 +16,14 @@ def walk_forward(panel: pd.DataFrame, cfg: Config) -> tuple[pd.DataFrame, list[d
     Returns out-of-sample predictions for every universe row on the test dates."""
     labelled = panel[panel["target"].notna()]
     dates = np.sort(labelled["Date"].unique())
+    min_train, block = cfg.min_train_dates, cfg.test_block_dates
+    if len(dates) > cfg.long_history_dates:
+        min_train = max(min_train, cfg.long_min_train_dates)
+        block = max(block, int(np.ceil((len(dates) - min_train) / cfg.max_folds)))
     folds, preds = [], []
-    k = cfg.min_train_dates
+    k = min_train
     while k < len(dates):
-        test_dates = dates[k:k + cfg.test_block_dates]
+        test_dates = dates[k:k + block]
         t0 = test_dates[0]
         train = labelled[(labelled["Date"] < t0) & (labelled["label_end_date"] < t0)]
         test = panel[panel["Date"].isin(test_dates)].copy()
@@ -36,7 +40,7 @@ def walk_forward(panel: pd.DataFrame, cfg: Config) -> tuple[pd.DataFrame, list[d
             "train_rows": int(len(train)),
             "train_dates": int(train["Date"].nunique()),
         })
-        k += cfg.test_block_dates
+        k += block
     oos = pd.concat(preds)
     oos["score_card"] = scorecard_score(oos)
     return oos, folds
@@ -118,4 +122,22 @@ def summarise(oos: pd.DataFrame, col: str, cfg: Config) -> dict:
         "bt_avg_turnover": float(bt["turnover"].mean()),
         "bt_max_drawdown_net": _max_dd(bt["cum_net"]),
         "bt_max_drawdown_bench": _max_dd(bt["cum_bench"]),
+        **_annualised(bt, cfg),
+    }
+
+
+def _annualised(bt: pd.DataFrame, cfg: Config) -> dict:
+    """Annualised figures, assuming about 240 DSE sessions a year."""
+    ppy = 240 / cfg.horizon
+    n = len(bt)
+    if n < 2:
+        return {}
+    ex = bt["net"] - bt["bench"]
+    sd = ex.std()
+    return {
+        "bt_years": round(n / ppy, 2),
+        "bt_ann_net": float(bt["cum_net"].iloc[-1] ** (ppy / n) - 1),
+        "bt_ann_gross": float(bt["cum_gross"].iloc[-1] ** (ppy / n) - 1),
+        "bt_ann_bench": float(bt["cum_bench"].iloc[-1] ** (ppy / n) - 1),
+        "bt_info_ratio_net": float(ex.mean() / sd * np.sqrt(ppy)) if sd > 0 else float("nan"),
     }

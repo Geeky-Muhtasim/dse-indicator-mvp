@@ -21,7 +21,9 @@ from .models import GBMRanker
 warnings.filterwarnings("ignore", category=UserWarning)
 
 ROOT = Path(__file__).resolve().parents[2]
-HISTORY = ROOT / "data" / "history" / "eod.csv"
+_HIST_DIR = ROOT / "data" / "history"
+# The backfill writes a compressed multi-year file; the original 60-day export is plain CSV.
+HISTORY = _HIST_DIR / "eod.csv.gz" if (_HIST_DIR / "eod.csv.gz").exists() else _HIST_DIR / "eod.csv"
 MODEL_DIR = ROOT / "data" / "model"
 APP_DIR = ROOT / "data" / "app"
 REPORT_DIR = ROOT / "reports"
@@ -36,9 +38,16 @@ def build_panel(raw: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     return df[ok].copy()
 
 
-def _ic_series(oos: pd.DataFrame, col: str) -> list:
+def _ic_series(oos: pd.DataFrame, col: str) -> tuple[list, str]:
+    """Daily rank IC, or monthly means once there are too many days to draw as bars."""
     ic = validate.daily_ic(oos, col)
-    return [{"date": str(pd.Timestamp(d).date()), "ic": round(float(v), 4)} for d, v in ic.items()]
+    ic.index = pd.to_datetime(ic.index)
+    freq = "daily"
+    if len(ic) > 150:
+        ic = ic.groupby(ic.index.to_period("M")).mean()
+        ic.index = ic.index.to_timestamp()
+        freq = "monthly"
+    return [{"date": str(pd.Timestamp(d).date()), "ic": round(float(v), 4)} for d, v in ic.items()], freq
 
 
 def _bt_rows(bt: pd.DataFrame) -> list:
@@ -85,7 +94,7 @@ def retrain(cfg: Config | None = None, log=print, html_report: bool = True,
     metrics_block = {
         "asofValidation": str(panel["Date"].max().date()),
         "quality": quality, "folds": folds, "summary": metrics,
-        "icSeries": _ic_series(oos, "score_gbm"),
+        "icSeries": (icser := _ic_series(oos, "score_gbm"))[0], "icFreq": icser[1],
         "calibration": [{"decile": int(d), "hitRate": round(float(r.hit_rate), 4),
                          "meanExcess": round(float(r.mean_excess), 5), "n": int(r.n)}
                         for d, r in calib.iterrows()],

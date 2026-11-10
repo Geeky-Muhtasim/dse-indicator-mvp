@@ -12,7 +12,7 @@ from dse_signal.config import Config
 from dse_signal.features import FEATURES
 from dse_signal.pipeline import build_panel
 
-CSV = Path(__file__).resolve().parents[1] / "data" / "history" / "eod.csv"
+from dse_signal.pipeline import HISTORY as CSV  # noqa: E402
 CFG = Config()
 
 
@@ -36,8 +36,10 @@ def test_classifier():
 
 def test_features_have_no_lookahead(raw):
     """Features on a date must not change when later data is deleted."""
+    all_dates = np.sort(raw["Date"].unique())
+    raw = raw[raw["Date"] >= all_dates[max(0, len(all_dates) - 120)]]  # keep the test fast on long histories
     dates = np.sort(raw["Date"].unique())
-    cut = dates[45]
+    cut = dates[min(45, len(dates) - 15)]
     full = features.build_features(data.prepare(raw, CFG))
     trunc = features.build_features(data.prepare(raw[raw["Date"] <= cut], CFG))
     a = full[full["Date"] == cut].set_index("Symbol")[FEATURES].sort_index()
