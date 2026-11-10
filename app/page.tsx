@@ -96,7 +96,7 @@ export default function SignalsPage() {
               <input value={q} onChange={(e) => { setQ(e.target.value); setShown(PAGE); }} placeholder={lang === "bi" ? "টিকার খুঁজুন · Ticker" : "Search ticker"} />
             </label>
           </div>
-          <div className="tbl">
+          <div className="tbl sig-table">
             <table style={{ minWidth: 920 }}>
               <thead>
                 <tr>
@@ -132,6 +132,26 @@ export default function SignalsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Phones: one card per stock instead of an 8-column table */}
+          <div className="mcards" role="list">
+            {sig.loading && <div style={{ padding: 16 }}><Loading h={240} /></div>}
+            {rows.slice(0, shown).map((r) => {
+              const main = r.signal === "AVOID" ? r.against[0] ?? r.for[0] : r.for[0] ?? r.against[0];
+              const d = main ? describe(main.feature, main.value) : null;
+              return (
+                <Link key={r.symbol} href={`/stock/${r.symbol}`} className="mcard" role="listitem">
+                  <span className="top"><span className="rk num">{n(r.rank)}</span><span className="tick" style={{ color: "var(--indigo)", textDecoration: "underline" }}>{r.symbol}</span><SignalChip s={r.signal} /></span>
+                  <span className="right"><span className="price" style={{ display: "block" }}><V p={money(r.close)} /></span>
+                    <span className={`num ${r.chg1d == null ? "" : r.chg1d > 0 ? "up" : r.chg1d < 0 ? "down" : "muted"}`} style={{ fontSize: 13 }}><V p={pct(r.chg1d, 2, true)} /></span></span>
+                  {d && <span className="why"><L p={d} stack /></span>}
+                  <span className="meta"><ScoreBar score={r.score} /><span><L en="Odds" bn="আস্থা" /> <b className="num" style={{ color: "var(--ink)" }}><V p={pct(r.odds, 0)} /></b></span></span>
+                </Link>
+              );
+            })}
+            {sig.data && rows.length === 0 && <p className="muted" style={{ padding: "12px 16px", margin: 0 }}><L en="No stocks match." bn="কোনো শেয়ার মেলেনি।" /></p>}
+          </div>
+
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 20px 16px" }}>
             <p style={{ margin: 0, fontSize: 13, color: "var(--muted)", maxWidth: 760 }}>
               <L en={`Odds: how often stocks in this score decile beat the market over ${m?.horizon ?? 5} sessions, out of sample. Not investment advice.`}

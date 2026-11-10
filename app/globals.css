@@ -166,3 +166,81 @@ td.r, th.r { text-align: right; }
 .brand-sub { display: block; font-size: 12px; color: var(--green-sub); font-weight: 400; }
 .brand b .bn { display: block; }
 .nav .en-inline { color: var(--green-sub); }
+
+/* ---------------------------------------------------------------- responsive layout
+   ≥1024px: fixed sidebar.  <1024px: top bar + slide-in drawer.  <720px: phone layouts. */
+.topbar, .scrim, .drawer-only { display: none; }
+.iconbtn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 0; border-radius: 8px; color: inherit; flex: none; }
+.iconbtn:hover { background: var(--green-2); }
+.langpill { height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid var(--green-line); background: var(--green-2); color: #F8FAF7; font-size: 14px; flex: none; }
+.mcards { display: none; }
+
+@media (min-width: 1024px) {
+  .shell { flex-wrap: nowrap; }
+  .nav { flex: 0 0 248px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .main { flex: 1 1 auto; }
+}
+
+@media (max-width: 1023px) {
+  .shell { display: block; }
+  .topbar { display: flex; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 30; height: 60px; padding: 0 12px 0 6px; background: var(--green); color: var(--green-text); box-shadow: 0 1px 0 var(--green-line); }
+  .topbar .brand { padding: 0; }
+  .topbar .brand small { display: none; }
+  .topbar .brand .mark { width: 28px; height: 28px; }
+  .nav { position: fixed; top: 0; bottom: 0; left: 0; z-index: 50; width: min(300px, 86vw); overflow-y: auto; transform: translateX(-105%); transition: transform .22s ease; box-shadow: 8px 0 24px rgba(0,0,0,.25); }
+  .nav.open { transform: none; }
+  .scrim { display: block; position: fixed; inset: 0; z-index: 40; background: rgba(15, 42, 34, .45); border: 0; padding: 0; }
+  .drawer-only { display: inline-flex; }
+  .main { min-height: calc(100vh - 60px); }
+  .page-head, .content { padding-left: 24px; padding-right: 24px; }
+  .row > * { flex-basis: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) { .nav { transition: none; } }
+
+@media (max-width: 719px) {
+  body { font-size: 14px; }
+  .page-head, .content { padding-left: 16px; padding-right: 16px; }
+  .page-head { padding-top: 18px; padding-bottom: 16px; gap: 14px; }
+  .page-head h1 { font-size: 24px; }
+  .page-head .lede { font-size: 15px; }
+  .page-head > div:last-child:not(:first-child) { width: 100%; }
+  .page-head > div:last-child:not(:first-child) .btn { flex: 1 1 0; text-align: center; align-items: center; }
+  .content { gap: 14px; padding-top: 16px; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .tile { padding: 12px 14px; }
+  .tile .v { font-size: 26px; }
+  .tile .s { font-size: 12px; }
+  .card { padding: 14px; }
+  .alert, .okband { padding: 12px 14px; }
+  .verdict { padding: 16px; }
+  .verdict p, .verdict div[style*="font-size: 19"] { font-size: 16px !important; }
+  .seg { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+  .seg button { white-space: nowrap; }
+  .search { min-width: 0; width: 100%; }
+  .sig-table { display: none; }
+  .mcards { display: flex; flex-direction: column; }
+  .contrib { gap: 10px; }
+}
+
+/* Screener cards (phones) */
+.mcard { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 12px 16px; border-top: 1px solid var(--rule); text-decoration: none; color: var(--ink); }
+.mcard:hover { background: #F1F5F1; color: var(--ink); }
+.mcard .top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.mcard .rk { color: var(--muted); font-size: 13px; min-width: 22px; }
+.mcard .right { text-align: right; }
+.mcard .why { grid-column: 1 / -1; font-size: 13px; line-height: 1.35; }
+.mcard .meta { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); }
+
+/* Tablets: cards in two columns, tiles in pairs */
+@media (max-width: 1023px) {
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sig-table { display: none; }
+  .mcards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mcards .mcard:nth-child(odd) { border-right: 1px solid var(--rule); }
+}
+@media (max-width: 719px) {
+  .mcards { grid-template-columns: minmax(0, 1fr); }
+  .mcards .mcard:nth-child(odd) { border-right: 0; }
+}
+@media (min-width: 1024px) { .iconbtn.drawer-only { display: none; } }

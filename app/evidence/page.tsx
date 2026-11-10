@@ -9,10 +9,11 @@ type Sum = {
   ic_mean: number; ic_positive_share: number; ic_tstat_nonoverlap: number; quintile_excess: Record<string, number>;
   q5_minus_q1: number; bt_periods: number; bt_gross_total: number; bt_net_total: number; bt_bench_total: number;
   bt_net_hit_vs_bench: number; bt_avg_turnover: number; bt_max_drawdown_net: number;
+  bt_years?: number; bt_ann_net?: number; bt_ann_bench?: number; bt_info_ratio_net?: number;
 };
 type BT = { date: string; cum_net: number; cum_bench: number; cum_gross: number }[];
 type Metrics = {
-  asofValidation: string; summary: { gbm: Sum; card: Sum }; icSeries: { date: string; ic: number }[];
+  asofValidation: string; summary: { gbm: Sum; card: Sum }; icSeries: { date: string; ic: number }[]; icFreq?: "daily" | "monthly";
   calibration: { decile: number; hitRate: number; meanExcess: number; n: number }[];
   backtest: { gbm: BT; card: BT }; folds: { fold: number; train_start: string; train_end: string; test_start: string; test_end: string; train_rows: number }[];
   familyImportance: Record<string, number>; config: { horizon: number; roundTripCost: number; commissionBps: number; slippageBps: number };
@@ -61,7 +62,7 @@ export default function EvidencePage() {
 
             <div className="row">
               <section className="card" aria-label="Daily rank IC">
-                <div className="card-head"><h2><L en="Daily rank IC" bn="দৈনিক র‍্যাঙ্ক আইসি" /></h2><span className="en muted" style={{ fontSize: 12 }}>Mean {g.ic_mean.toFixed(3)} · positive {Math.round(g.ic_positive_share * 100)}% of days</span></div>
+                <div className="card-head"><h2>{m.icFreq === "monthly" ? <L en="Rank IC by month" bn="মাসভিত্তিক র‍্যাঙ্ক আইসি" /> : <L en="Daily rank IC" bn="দৈনিক র‍্যাঙ্ক আইসি" />}</h2><span className="en muted" style={{ fontSize: 12 }}>Mean {g.ic_mean.toFixed(3)} · positive {Math.round(g.ic_positive_share * 100)}% of days{m.icFreq === "monthly" ? " · bars are monthly means" : ""}</span></div>
                 <div style={{ marginTop: 14 }}>
                   <ZeroBars values={m.icSeries.map((d) => d.ic)} labels={m.icSeries.map((d) => d.date)} fmt={(v) => v.toFixed(3)} meanLine={g.ic_mean} />
                   <div className="axis"><span><V p={dateLabel(m.icSeries[0].date)} /></span><span><V p={dateLabel(m.icSeries[m.icSeries.length - 1].date)} /></span></div>
@@ -137,13 +138,20 @@ export default function EvidencePage() {
                         [{ en: "Equal-weight market", bn: "সমান-ওজনের বাজার" }, g.bt_bench_total, c.bt_bench_total],
                         [{ en: "Average turnover", bn: "গড় টার্নওভার" }, g.bt_avg_turnover, c.bt_avg_turnover],
                         [{ en: "Max drawdown, net", bn: "সর্বোচ্চ পতন" }, g.bt_max_drawdown_net, c.bt_max_drawdown_net],
+                        ...((g.bt_years ?? 0) >= 1 ? [
+                          [{ en: "Annualised, net", bn: "বার্ষিক, খরচের পরে" }, g.bt_ann_net ?? 0, c.bt_ann_net ?? 0],
+                          [{ en: "Annualised, market", bn: "বার্ষিক, বাজার" }, g.bt_ann_bench ?? 0, c.bt_ann_bench ?? 0],
+                        ] : []),
                       ].map(([lab, a, b]) => (
                         <tr key={(lab as { en: string }).en}><td><L p={lab as { en: string; bn: string }} /></td><td className="r num">{P(a as number, 1, (lab as { en: string }).en !== "Average turnover")}</td><td className="r num">{P(b as number, 1, (lab as { en: string }).en !== "Average turnover")}</td></tr>
                       ))}
+                      {(g.bt_years ?? 0) >= 1 && (
+                        <tr><td><L en="Information ratio vs market" bn="ইনফরমেশন রেশিও" /></td><td className="r num-en">{(g.bt_info_ratio_net ?? 0).toFixed(2)}</td><td className="r num-en">{(c.bt_info_ratio_net ?? 0).toFixed(2)}</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
-                <p className="note">Top decile, rebalanced every {m.config.horizon} sessions, entry at next open, {pct(m.config.roundTripCost, 2).en} round-trip cost ({m.config.commissionBps} bps commission + {m.config.slippageBps} bps slippage per side).</p>
+                <p className="note">{g.bt_years ? `${g.bt_years.toFixed(1)} years out of sample. ` : ""}Top decile, rebalanced every {m.config.horizon} sessions, entry at next open, {pct(m.config.roundTripCost, 2).en} round-trip cost ({m.config.commissionBps} bps commission + {m.config.slippageBps} bps slippage per side).</p>
               </section>
             </div>
 
@@ -152,7 +160,7 @@ export default function EvidencePage() {
                 <div className="card-head"><h2><L en="How it was tested" bn="কীভাবে পরীক্ষা করা হয়েছে" /> <span className="en-inline">· purged walk-forward</span></h2>
                   <span className="legend"><span><span className="sw" style={{ background: "#0F3A2C" }} />Train</span><span><span className="sw purge" style={{ border: "1px solid #9DB5A8" }} />Purged</span><span><span className="sw" style={{ background: "#262B6B" }} />Test</span></span></div>
                 <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {m.folds.map((f) => {
+                  {(m.folds.length > 12 ? Array.from({ length: 12 }, (_, i) => m.folds[Math.round((i * (m.folds.length - 1)) / 11)]) : m.folds).map((f) => {
                     const a = 0, b = (days(t0!, f.train_end) / span) * 100, ts = (days(t0!, f.test_start) / span) * 100, te = (days(t0!, f.test_end) / span) * 100;
                     return (
                       <div key={f.fold} style={{ display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 12, alignItems: "center" }} title={`Train ${f.train_start} to ${f.train_end} (${f.train_rows} rows), test ${f.test_start} to ${f.test_end}`}>
@@ -167,7 +175,7 @@ export default function EvidencePage() {
                   })}
                   <div style={{ display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 12 }}><span /><span className="axis" style={{ paddingTop: 0 }}><span><V p={dateLabel(t0!)} /></span><span><V p={dateLabel(t1!)} /></span></span></div>
                 </div>
-                <p className="note"><L en="Training rows whose label window reaches the test block are removed, so no future return leaks into training." bn="যে প্রশিক্ষণ সারির রিটার্ন-জানালা পরীক্ষার সময়ে পৌঁছায়, তা বাদ দেওয়া হয়, তাই ভবিষ্যতের তথ্য ফাঁস হয় না।" /></p>
+                <p className="note">{m.folds.length > 12 && <span className="en">{m.folds.length} folds in total, 12 shown. </span>}<L en="Training rows whose label window reaches the test block are removed, so no future return leaks into training." bn="যে প্রশিক্ষণ সারির রিটার্ন-জানালা পরীক্ষার সময়ে পৌঁছায়, তা বাদ দেওয়া হয়, তাই ভবিষ্যতের তথ্য ফাঁস হয় না।" /></p>
               </section>
 
               <section className="card" aria-label="Feature families">
