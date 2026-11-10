@@ -20,5 +20,12 @@
         0.1
       ]
     ]
-  }
+  },
+  "validation_after_readjust": {
+    "overlap_rows": 25376,
+    "symbols": 403,
+    "consistent_share": 1.0,
+    "inconsistent": []
+  },
+  "equity_corporate_actions": 14
 }

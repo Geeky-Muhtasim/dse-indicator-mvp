@@ -110,3 +110,23 @@ def test_glitch_ycp_is_not_an_adjustment():
     raw["Open"] = raw["High"] = raw["Low"] = raw["Close"]
     adj, ev = adjust_history(raw)
     assert len(ev) == 0 and adj["Close"].tolist() == [100, 101, 102]
+
+
+def test_gap_rule_catches_bonus_but_not_limit_down():
+    from dse_signal.dse_live import gap_factor
+    # 25% bonus: yesterday 25.2, today trades 19.9 to 20.6 (whole day far below the old price)
+    assert gap_factor(25.2, 19.9, 20.6, 19.7) == pytest.approx(1 / 1.25)
+    # genuine crash locked at the 10% limit (high == low): not an adjustment
+    assert gap_factor(110.0, 99.0, 99.0, 99.0) == 1.0
+    # ordinary bad day: high only 3% below
+    assert gap_factor(100.0, 97.0, 97.5, 92.0) == 1.0
+
+
+def test_reference_factors_recover_exact_bonus():
+    from dse_signal.dse_live import reference_factors
+    d = pd.bdate_range("2026-10-12", periods=4)
+    raw = pd.DataFrame({"Symbol": "X", "Date": d, "Close": [194.5, 195.0, 170.3, 171.0]})
+    ref = raw.assign(Close=[194.5 / 1.15, 195.0 / 1.15, 170.3, 171.0])
+    rf = reference_factors(raw, ref)
+    assert len(rf) == 1 and rf["Date"].iloc[0] == d[2]
+    assert rf["factor"].iloc[0] == pytest.approx(1 / 1.15)

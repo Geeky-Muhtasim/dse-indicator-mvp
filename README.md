@@ -52,6 +52,8 @@ Pipeline commands:
 python pipeline/cli.py update     # fetch new DSE sessions, rescore, write data/app
 python pipeline/cli.py score      # rescore the latest stored session
 python pipeline/cli.py retrain    # walk-forward validation, retrain, HTML report in reports/
+python pipeline/cli.py backfill   # rebuild ~2 years of history from DSE, then retrain
+python pipeline/cli.py readjust   # find missed bonus/rights adjustments, then retrain
 python -m pytest -q               # leakage, alignment, TreeSHAP and API tests
 ```
 
@@ -78,7 +80,8 @@ API docs are served at `/api/docs`.
 - **Validation:** expanding walk-forward with purging; backtest with next-open entry, limit-lock fills skipped, 0.90% round-trip cost.
 - **Signals:** top 10% Buy (top 5% when risk-off), bottom 20% Avoid. The odds shown are the out-of-sample hit rate of the stock's score decile.
 - **Explanations:** SHAP values that add up exactly to the score. The API recomputes them in pure Python, and a test checks them against LightGBM to within 1e-9.
-- **Corporate actions:** DSE reports each day's YCP already adjusted for bonus and rights issues. When YCP differs from the stored close, the stock's whole history is rescaled by YCP / stored close and the event is logged in `data/history/corporate_actions.csv`.
+- **Corporate actions:** DSE's archive does not adjust prices for bonus or rights issues, so adjustments are detected three ways: exact factors from the adjusted StockNow export where it overlaps; DSE's YCP when it differs from the stored close; and an ex-date rule (a session whose high is more than 11% below the previous close while still trading in a range, which circuit breakers rule out for normal trading), snapped to standard bonus ratios. Locked limit-down days are left alone. Bonuses of 10% or less outside the StockNow window can be missed. Every adjustment is logged in `data/history/corporate_actions.csv`; `python pipeline/cli.py readjust` re-checks the stored history.
+- **History depth:** DSE publishes about two years of day-end data, so the backfill starts at 11 Nov 2024. Older history needs a vendor export.
 
 ## Repository layout
 
@@ -96,7 +99,7 @@ tests/                    pytest suite
 
 ## Limits
 
-- The first model was validated on about 60 sessions in one falling market; treat metrics as provisional until more history is loaded.
+- Two years of history and under one year of out-of-sample testing: the edge is statistically clear in ranking (IC t-stat above 6) but thin after costs.
 - Cost assumptions are estimates; edit `pipeline/dse_signal/config.py`.
 - Prices are public DSE end-of-day data used for research. Live intraday data is licensed and not used. For a commercial product, switch to a licensed data vendor.
 - Not investment advice.

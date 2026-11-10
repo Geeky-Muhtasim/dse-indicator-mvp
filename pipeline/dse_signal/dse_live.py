@@ -20,6 +20,26 @@ REL_TOL, ABS_TOL = 0.004, 0.05
 FACTOR_MIN, FACTOR_MAX = 0.1, 1.02
 
 
+# DSE's archive does NOT adjust YCP for bonus issues (checked against the adjusted StockNow
+# export), so equities also need a price-based rule. Circuit breakers stop a stock trading more
+# than about 10% below its reference price, so a session whose HIGH is more than 11% below the
+# previous close, with a real trading range, can only be an ex-date on an adjusted reference.
+# Locked limit-down days (high == low) are genuine crashes and are left alone.
+GAP_HIGH_MAX = 0.89
+GAP_MIN_PRICE = 3.0
+BONUS = np.array([0.05, 0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 1.0])
+SNAP = 1 / (1 + BONUS)
+
+
+def gap_factor(prev, o, h, l) -> float:
+    """Adjustment factor implied by an ex-date gap, or 1.0 if the session looks like trading."""
+    if not (np.isfinite(prev) and prev >= GAP_MIN_PRICE and h > l and h / prev < GAP_HIGH_MAX):
+        return 1.0
+    r = o / prev
+    k = int(np.argmin(np.abs(SNAP - r)))
+    return float(SNAP[k]) if abs(SNAP[k] - r) / r < 0.03 else float(r)
+
+
 def _is_event(prev, ycp) -> bool:
     if not (np.isfinite(prev) and prev > 0 and np.isfinite(ycp) and ycp > 0):
         return False
@@ -90,16 +110,22 @@ def merge_adjusted(hist: pd.DataFrame, new: pd.DataFrame) -> tuple[pd.DataFrame,
     events = []
     for d, day in new.groupby("Date", sort=True):
         last = hist.sort_values("Date").groupby("Symbol").tail(1).set_index("Symbol")["Close"]
+        from .data import classify_instrument
         for r in day.itertuples(index=False):
             prev = last.get(r.Symbol, np.nan)
-            if _is_event(prev, r.YCP):
-                factor = r.YCP / prev
+            factor, source = 1.0, None
+            if classify_instrument(r.Symbol) == "equity":
+                if _is_event(prev, r.YCP):
+                    factor, source = r.YCP / prev, "ycp"
+                elif (g := gap_factor(prev, r.Open, r.High, r.Low)) != 1.0:
+                    factor, source = g, "gap"
+            if source:
                 m = hist["Symbol"] == r.Symbol
                 hist.loc[m, ["Open", "High", "Low", "Close"]] *= factor
                 hist.loc[m, "Volume"] = (hist.loc[m, "Volume"] / factor).round()
                 events.append({"symbol": r.Symbol, "date": str(pd.Timestamp(d).date()),
                                "stored_close": round(float(prev), 4), "dse_ycp": float(r.YCP),
-                               "factor": round(float(factor), 6)})
+                               "factor": round(float(factor), 6), "source": source})
         hist = pd.concat([hist, day[COLS]], ignore_index=True)
     hist = hist.drop_duplicates(["Symbol", "Date"], keep="last").sort_values(["Symbol", "Date"])
     for c in ("Open", "High", "Low", "Close"):
@@ -173,28 +199,68 @@ def fetch_range(start: date, end: date, chunk_days: int = 31, pause: float = 3.0
     return out.drop_duplicates(["Symbol", "Date"], keep="last").sort_values(["Symbol", "Date"]).reset_index(drop=True)
 
 
-def adjust_history(raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Back-adjust a raw DSE panel in one pass.
+def reference_factors(raw: pd.DataFrame, ref: pd.DataFrame) -> pd.DataFrame:
+    """Exact factors from an adjusted reference export: wherever the ratio reference/raw steps,
+    the step is a corporate action on that date."""
+    m = raw[["Symbol", "Date", "Close"]].merge(ref[["Symbol", "Date", "Close"]], on=["Symbol", "Date"],
+                                                suffixes=("", "_ref")).sort_values(["Symbol", "Date"])
+    m["ratio"] = m["Close_ref"] / m["Close"]
+    prev = m.groupby("Symbol")["ratio"].shift(1)
+    step = (prev / m["ratio"])
+    hit = (step - 1).abs() > 0.01
+    return m.loc[hit, ["Symbol", "Date"]].assign(factor=step[hit].to_numpy(), source="reference")
 
-    On each corporate-action day the factor is YCP / previous stored close. Every price before
-    that day is multiplied by the product of all later factors, which is exactly what applying
-    merge_adjusted day by day would do, but vectorized for years of data."""
-    d = raw.sort_values(["Symbol", "Date"]).reset_index(drop=True).copy()
-    prev = d.groupby("Symbol")["Close"].shift(1)
-    ev = np.array([_is_event(p, y) for p, y in zip(prev.to_numpy(), d["YCP"].to_numpy())])
-    f = np.where(ev, d["YCP"] / prev, 1.0)
-    logf = pd.Series(np.log(f), index=d.index)
-    # Sum of log-factors strictly after each row, within its symbol.
+
+def detect_events(raw: pd.DataFrame, ref: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Corporate-action factors for every row that needs one. Priority: the reference export
+    (exact) on its dates, then DSE's YCP, then the ex-date gap rule. Equities only."""
+    from .data import classify_instrument
+
+    d = raw.sort_values(["Symbol", "Date"]).reset_index(drop=True)
+    eq = d["Symbol"].map(classify_instrument).eq("equity").to_numpy()
+    prev = d.groupby("Symbol")["Close"].shift(1).to_numpy()
+    ycp = d["YCP"].to_numpy() if "YCP" in d else np.full(len(d), np.nan)
+    rows = []
+    for i in np.flatnonzero(eq):
+        if _is_event(prev[i], ycp[i]):
+            rows.append((d.at[i, "Symbol"], d.at[i, "Date"], ycp[i] / prev[i], "ycp"))
+        else:
+            g = gap_factor(prev[i], d.at[i, "Open"], d.at[i, "High"], d.at[i, "Low"])
+            if g != 1.0:
+                rows.append((d.at[i, "Symbol"], d.at[i, "Date"], g, "gap"))
+    ev = pd.DataFrame(rows, columns=["Symbol", "Date", "factor", "source"])
+    if ref is not None and len(ref):
+        rf = reference_factors(d, ref)
+        rf = rf[rf["Symbol"].map(classify_instrument).eq("equity")]
+        lo, hi = ref["Date"].min(), ref["Date"].max()
+        # inside the reference window the reference is the truth, so drop rule-based guesses there
+        ev = ev[~(ev["Symbol"].isin(ref["Symbol"].unique()) & ev["Date"].between(lo, hi))]
+        ev = pd.concat([ev, rf], ignore_index=True)
+    return ev.sort_values(["Symbol", "Date"]).reset_index(drop=True)
+
+
+def apply_events(df: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
+    """Rescale every price before each event by its factor (volumes inversely)."""
+    d = df.sort_values(["Symbol", "Date"]).reset_index(drop=True).copy()
+    f = d[["Symbol", "Date"]].merge(events[["Symbol", "Date", "factor"]], on=["Symbol", "Date"], how="left")["factor"].astype(float).fillna(1.0)
+    logf = pd.Series(np.log(f.to_numpy()), index=d.index)
     after = logf.groupby(d["Symbol"]).transform("sum") - logf.groupby(d["Symbol"]).cumsum()
     adj = np.exp(after.to_numpy())
     for c in ("Open", "High", "Low", "Close"):
         d[c] = (d[c] * adj).round(4)
     d["Volume"] = (d["Volume"] / adj).round()
-    # prev and YCP are raw (unadjusted) values, as DSE reported them that day.
-    events = d.loc[ev, ["Symbol", "Date"]].assign(
-        stored_close=prev[ev].to_numpy(), dse_ycp=d.loc[ev, "YCP"].to_numpy(), factor=f[ev]
-    ).rename(columns={"Symbol": "symbol", "Date": "date"})
-    return d[COLS], events
+    return d
+
+
+def adjust_history(raw: pd.DataFrame, ref: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Back-adjust a raw DSE panel in one pass (equivalent to merge_adjusted day by day)."""
+    ev = detect_events(raw, ref)
+    adj = apply_events(raw, ev)
+    d = raw.sort_values(["Symbol", "Date"]).reset_index(drop=True)
+    prev = d.groupby("Symbol")["Close"].shift(1)
+    info = d[["Symbol", "Date"]].assign(stored_close=prev, dse_ycp=d.get("YCP"))
+    events = ev.merge(info, on=["Symbol", "Date"], how="left").rename(columns={"Symbol": "symbol", "Date": "date"})
+    return adj[COLS], events[["symbol", "date", "stored_close", "dse_ycp", "factor", "source"]]
 
 
 def compare_with_reference(adj: pd.DataFrame, ref: pd.DataFrame) -> dict:
@@ -223,7 +289,11 @@ def backfill(history_path: Path, start: date, end: date | None = None, min_consi
     raw = fetch_range(start, end, log=log)
     if raw.empty:
         raise RuntimeError("DSE returned no data for the backfill range")
-    adj, events = adjust_history(raw)
+    ref = pd.read_csv(history_path, parse_dates=["Date"]) if history_path.exists() else None
+    if ref is not None and history_path.name.startswith("eod.csv.gz"):
+        ref_copy = history_path.parent / "stocknow_reference.csv.gz"
+        ref = pd.read_csv(ref_copy, parse_dates=["Date"]) if ref_copy.exists() else None
+    adj, events = adjust_history(raw, ref)
     report = {"start": str(start), "end": str(adj["Date"].max().date()), "rows": int(len(adj)),
               "failed_days": raw.attrs.get("failed_days", []),
               "symbols": int(adj["Symbol"].nunique()), "sessions": int(adj["Date"].nunique()),
@@ -248,3 +318,34 @@ def backfill(history_path: Path, start: date, end: date | None = None, min_consi
     log(f"Wrote {out.name}: {report['rows']:,} rows, {report['symbols']} symbols, "
         f"{report['sessions']} sessions, {report['corporate_actions']} corporate actions")
     return report
+
+
+def readjust(history_path: Path, log=print) -> pd.DataFrame:
+    """Find and apply corporate actions missing from the stored history. Safe to rerun: once a
+    gap is adjusted it no longer looks like a gap, and reference ratios become flat."""
+    import json
+
+    hist = pd.read_csv(history_path, parse_dates=["Date"])
+    ref_path = history_path.parent / "stocknow_reference.csv.gz"
+    ref = pd.read_csv(ref_path, parse_dates=["Date"]) if ref_path.exists() else None
+    ev = detect_events(hist, ref)
+    if ev.empty:
+        log("No missing adjustments found")
+        return ev
+    adj = apply_events(hist, ev)
+    adj.assign(Date=adj["Date"].dt.strftime("%Y-%m-%d"))[COLS].to_csv(history_path, index=False)
+    out = ev.rename(columns={"Symbol": "symbol", "Date": "date"}).assign(date=lambda x: x["date"].dt.strftime("%Y-%m-%d"))
+    log_path = history_path.parent / "corporate_actions.csv"
+    old = pd.read_csv(log_path) if log_path.exists() else pd.DataFrame()
+    if "source" not in old:  # earlier logs held only bond YCP noise from before equities were handled
+        old = pd.DataFrame()
+    pd.concat([old, out], ignore_index=True).round(6).to_csv(log_path, index=False)
+    if ref is not None:
+        rep_path = history_path.parent / "backfill_report.json"
+        rep = json.loads(rep_path.read_text()) if rep_path.exists() else {}
+        rep["validation_after_readjust"] = compare_with_reference(adj, ref)
+        rep["equity_corporate_actions"] = int(len(ev))
+        rep_path.write_text(json.dumps(rep, indent=2))
+        log(f"Validation vs StockNow after readjust: {rep['validation_after_readjust']['consistent_share']:.1%}")
+    log(f"Applied {len(ev)} equity adjustments: " + ", ".join(f"{r.Symbol} {pd.Timestamp(r.Date).date()} x{r.factor:.3f} ({r.source})" for r in ev.itertuples()))
+    return ev

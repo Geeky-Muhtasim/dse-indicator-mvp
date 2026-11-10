@@ -24,6 +24,7 @@ def main() -> int:
     bf.add_argument("--start", default="2024-11-01", help="first date to fetch (YYYY-MM-DD)")
     bf.add_argument("--min-consistency", type=float, default=0.9,
                     help="share of overlapping symbols that must agree with the existing history")
+    sub.add_parser("readjust", help="detect missed bonus/rights adjustments in the stored history, then retrain")
     rt = sub.add_parser("retrain", help="validate and retrain the model")
     rt.add_argument("--no-report", action="store_true")
     rt.add_argument("--min-ic", type=float, default=0.0, help="promote only above this OOS rank IC")
@@ -42,6 +43,11 @@ def main() -> int:
         backfill(pipeline.HISTORY, date.fromisoformat(a.start), min_consistency=a.min_consistency)
         import importlib
         importlib.reload(pipeline)  # pick up eod.csv.gz as the history file
+        pipeline.retrain(cfg)
+        return 0
+    if a.cmd == "readjust":
+        from dse_signal.dse_live import readjust
+        readjust(pipeline.HISTORY)
         pipeline.retrain(cfg)
         return 0
     if a.cmd == "score":
