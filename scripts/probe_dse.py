@@ -1,42 +1,55 @@
-"""Diagnose what DSE's day-end archive returns for different dates and range widths.
-Prints a summary per probe and saves the raw HTML for inspection (uploaded as an artifact)."""
+"""Diagnose DSE data sources from a CI runner: how far back the archive page has data,
+and whether the JSON API accepts a browser User-Agent. Saves raw responses as an artifact."""
 import re
-import sys
 import time
 from pathlib import Path
 
-import requests
+from bdshare.util import vars as vs
+from bdshare.util.helper import _session  # carries bdshare's CA bundle for old.dsebd.org
 
 OUT = Path("probe_out")
 OUT.mkdir(exist_ok=True)
-UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"}
-HOSTS = ["https://old.dsebd.org/", "https://www.dsebd.org/", "https://dsebd.org/"]
-PROBES = [
-    ("recent_week_all", "2026-11-01", "2026-11-10", "All Instrument"),
-    ("2024_week_all", "2024-01-01", "2024-01-07", "All Instrument"),
-    ("2024_month_all", "2024-01-01", "2024-01-31", "All Instrument"),
-    ("2021_week_all", "2021-01-03", "2021-01-07", "All Instrument"),
-    ("2021_week_GP", "2021-01-03", "2021-01-07", "GP"),
-    ("2020_year_GP", "2020-01-01", "2020-12-31", "GP"),
-]
+BROWSER = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+           "Accept": "application/json, text/plain, */*", "Referer": "https://dse.com.bd/", "Origin": "https://dse.com.bd"}
 
-for host in HOSTS:
-    for name, a, b, inst in PROBES:
-        url = host + "day_end_archive.php"
-        t = time.time()
+print("== archive page, one week of all instruments per year ==", flush=True)
+for y in [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2018]:
+    a, b = f"{y}-03-01", f"{y}-03-10"
+    if y == 2026:
+        a, b = "2026-11-01", "2026-11-10"
+    t = time.time()
+    try:
+        r = _session.get(vs.DSE_LEGACY_URL + vs.DSE_DEA_URL,
+                         params={"startDate": a, "endDate": b, "inst": "All Instrument", "archive": "data"}, timeout=120)
+        html = r.text
+        (OUT / f"archive_{y}.html").write_text(html, encoding="utf-8", errors="ignore")
+        dates = sorted(set(re.findall(r">\s*(20\d\d-\d\d-\d\d)\s*<", html)))
+        print(f"archive {y}: HTTP {r.status_code} {len(html):>9,} B  <tr>={html.count('<tr'):>5}  "
+              f"dates={dates[:1]}..{dates[-1:]} n={len(dates)}  {time.time()-t:.1f}s", flush=True)
+    except Exception as e:
+        print(f"archive {y}: ERROR {type(e).__name__}: {str(e)[:160]}", flush=True)
+    time.sleep(2)
+
+print("== archive page, single stock (GP) over a whole year ==", flush=True)
+for y in [2024, 2021, 2020]:
+    try:
+        r = _session.get(vs.DSE_LEGACY_URL + vs.DSE_DEA_URL,
+                         params={"startDate": f"{y}-01-01", "endDate": f"{y}-12-31", "inst": "GP", "archive": "data"}, timeout=120)
+        dates = sorted(set(re.findall(r">\s*(20\d\d-\d\d-\d\d)\s*<", r.text)))
+        print(f"GP {y}: HTTP {r.status_code} rows={len(dates)} {dates[:1]}..{dates[-1:]}", flush=True)
+    except Exception as e:
+        print(f"GP {y}: ERROR {type(e).__name__}: {str(e)[:160]}", flush=True)
+    time.sleep(2)
+
+print("== JSON API day-end ==", flush=True)
+for label, headers in [("bdshare UA", {}), ("browser UA", BROWSER)]:
+    for a, b in [("2026-11-09", "2026-11-10"), ("2021-03-01", "2021-03-02")]:
         try:
-            r = requests.get(url, params={"startDate": a, "endDate": b, "inst": inst, "archive": "data"},
-                             headers=UA, timeout=120)
-            html = r.text
-            tag = re.sub(r"\W+", "_", host.split("//")[1]) + name
-            (OUT / f"{tag}.html").write_text(html, encoding="utf-8", errors="ignore")
-            rows = html.count("<tr")
-            dates = sorted(set(re.findall(r"20\d\d-\d\d-\d\d", html)))
-            classes = sorted(set(re.findall(r'<table[^>]*class="([^"]*)"', html)))[:4]
-            msg = re.findall(r"(?i)(maximum[^<]{0,80}|no data[^<]{0,60}|not found[^<]{0,60}|limit[^<]{0,60})", html)[:3]
-            print(f"{host:24} {name:16} HTTP {r.status_code} {len(html):>8,} bytes {rows:>5} <tr> "
-                  f"dates {dates[:1]}..{dates[-1:]} n={len(dates)} {time.time()-t:5.1f}s tables={classes} hints={msg}", flush=True)
+            r = _session.get(vs.DSE_URL + vs.DSE_API_DAY_END, params={"from": a, "to": b, "page": 1},
+                             headers=headers, timeout=60)
+            body = r.text
+            (OUT / f"api_{label.split()[0]}_{a}.json").write_text(body[:200000], encoding="utf-8", errors="ignore")
+            print(f"api {label:10} {a}: HTTP {r.status_code} {len(body):,} B  head={body[:160]!r}", flush=True)
         except Exception as e:
-            print(f"{host:24} {name:16} ERROR {type(e).__name__}: {str(e)[:150]}", flush=True)
+            print(f"api {label:10} {a}: ERROR {type(e).__name__}: {str(e)[:160]}", flush=True)
         time.sleep(2)
-sys.exit(0)
