@@ -166,22 +166,22 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
           ) : [0, 1, 2, 3].map((i) => <Loading key={i} h={118} />)}
         </section>
 
-        <div className="row" style={{ alignItems: "flex-start" }}>
-          <section className="card" style={{ flex: "3 1 520px" }} aria-label="Price">
+        <div className="row row-wide-left">
+          <section className="card" aria-label="Price">
             <div className="card-head">
               <h2><L en="Price and volume" bn="দর ও লেনদেন" /> <span className="en-inline">· last {hist.length} sessions</span></h2>
               <span className="legend"><span><span className="sw" style={{ height: 2, background: "#262B6B" }} />Close</span><span><span className="sw" style={{ height: 0, borderTop: "2px dashed #4A6458" }} />20-day average</span></span>
             </div>
             {data ? (
-              <div style={{ marginTop: 12 }}>
-                <LineChart ariaLabel={`${sym} closing price over ${hist.length} sessions`} labels={labels}
+              <div style={{ marginTop: 12, flex: "1 1 auto", display: "flex", flexDirection: "column" }}>
+                <LineChart fill height={240} ariaLabel={`${sym} closing price over ${hist.length} sessions`} labels={labels}
                   series={[{ name: "20-day avg", color: "#4A6458", dash: "5 4", values: ma }, { name: "Close", color: "#262B6B", values: closes }]} />
                 <VolumeBars values={vols} />
               </div>
             ) : <Loading h={260} />}
           </section>
 
-          <section className="card gl" style={{ flex: "2 1 320px", backgroundColor: "var(--panel)", display: "flex", flexDirection: "column", gap: 14 }} aria-label="What-if">
+          <section className="card gl" style={{ backgroundColor: "var(--panel)", gap: 14 }} aria-label="What-if">
             <div>
               <h2><L en="What-if, scored live" bn="যদি এমন হয়" /></h2>
               <p className="note" style={{ marginTop: 4 }}><L en="Move an input: the backend re-scores and re-explains this stock with the same model." bn="একটি মান বদলান, ব্যাকএন্ড একই মডেলে নতুন স্কোর ও কারণ দেবে।" /></p>

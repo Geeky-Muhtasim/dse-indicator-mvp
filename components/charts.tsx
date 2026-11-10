@@ -5,21 +5,27 @@ type Series = { name: string; color: string; dash?: string; values: (number | nu
 
 /** Multi-line chart on one y-axis, with a crosshair tooltip. Lines are 2px; the hit area is the full plot. */
 export function LineChart({
-  labels, series, height = 220, yFmt = (v: number) => v.toFixed(2), refLine, refLabel, shade, ariaLabel,
+  labels, series, height = 220, yFmt = (v: number) => v.toFixed(2), refLine, refLabel, shade, ariaLabel, fill = false,
 }: {
   labels: string[]; series: Series[]; height?: number; yFmt?: (v: number) => string;
   refLine?: number; refLabel?: string; shade?: boolean[]; ariaLabel: string;
+  /** Grow to fill the parent's height (parent must be a flex column); `height` becomes the minimum. */
+  fill?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [W, setW] = useState(760);
+  const [boxH, setBoxH] = useState(height);
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => setW(Math.max(280, Math.round(e.contentRect.width))));
+    const ro = new ResizeObserver(([e]) => {
+      setW(Math.max(280, Math.round(e.contentRect.width)));
+      setBoxH(Math.round(e.contentRect.height));
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const H = height;
+  const H = fill ? Math.max(height, boxH) : height;
   const pad = { l: 48, r: 12, t: 12, b: 26 };
   const all = series.flatMap((s) => s.values.filter((v): v is number => v != null));
   if (refLine != null) all.push(refLine);
@@ -48,8 +54,9 @@ export function LineChart({
   const xi = [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1];
 
   return (
-    <div ref={box} style={{ position: "relative" }}>
-      <svg ref={ref} viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={ariaLabel} style={{ width: "100%", height: H, display: "block" }}
+    <div ref={box} style={fill ? { position: "relative", flex: "1 1 auto", minHeight: height } : { position: "relative" }}>
+      <svg ref={ref} viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={ariaLabel}
+        style={fill ? { position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" } : { width: "100%", height: H, display: "block" }}
         onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
         {shade && shade.map((s, i) => s && i < n - 1 ? (
           <rect key={`s${i}`} x={x(i)} y={pad.t} width={x(i + 1) - x(i)} height={H - pad.t - pad.b} fill="#FBEFF3" />
@@ -109,20 +116,21 @@ export function VolumeBars({ values }: { values: number[] }) {
   );
 }
 
-/** Bars around a zero line: positive up in `pos`, negative down in `neg`. */
+/** Bars around a zero line: positive up in `pos`, negative down in `neg`. The zero line sits
+ *  where the data puts it, so a series with no negatives uses the full height. */
 export function ZeroBars({ values, labels, fmt, height = 220, pos = "#262B6B", neg = "#B3124E", meanLine }: {
   values: number[]; labels?: string[]; fmt: (v: number) => string; height?: number; pos?: string; neg?: string; meanLine?: number;
 }) {
-  const mx = Math.max(...values.map(Math.abs), 1e-9);
-  const half = height / 2;
+  const up = Math.max(0, ...values), dn = Math.max(0, ...values.map((v) => -v));
+  const topH = Math.round((height * up) / (up + dn || 1));
   return (
     <div style={{ height, display: "flex", flexDirection: "column" }}>
-      <div className="bars" style={{ height: half, borderBottom: "1px solid #0F2A22", position: "relative" }}>
-        {meanLine != null && meanLine > 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: `${(meanLine / mx) * 100}%`, borderTop: "1px dashed #262B6B" }} />}
-        {values.map((v, i) => <span key={i} title={`${labels?.[i] ?? ""} ${fmt(v)}`} style={{ height: v > 0 ? `${(v / mx) * 100}%` : 0, background: pos }} />)}
+      <div className="bars" style={{ height: topH, borderBottom: "1px solid #0F2A22", position: "relative" }}>
+        {meanLine != null && meanLine > 0 && up > 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: `${(meanLine / up) * 100}%`, borderTop: "1px dashed #0F2A22", zIndex: 1 }} />}
+        {values.map((v, i) => <span key={i} title={`${labels?.[i] ?? ""} ${fmt(v)}`} style={{ height: v > 0 ? `${(v / up) * 100}%` : 0, background: pos }} />)}
       </div>
-      <div className="bars" style={{ height: half, alignItems: "flex-start" }}>
-        {values.map((v, i) => <span key={i} title={`${labels?.[i] ?? ""} ${fmt(v)}`} style={{ height: v < 0 ? `${(-v / mx) * 100}%` : 0, background: neg }} />)}
+      <div className="bars" style={{ height: height - topH, alignItems: "flex-start" }}>
+        {values.map((v, i) => <span key={i} title={`${labels?.[i] ?? ""} ${fmt(v)}`} style={{ height: v < 0 ? `${(-v / dn) * 100}%` : 0, background: neg }} />)}
       </div>
     </div>
   );

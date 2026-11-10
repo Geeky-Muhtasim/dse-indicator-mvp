@@ -21,6 +21,7 @@ type Metrics = {
 };
 
 const days = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 864e5;
+const CHART_H = 240; // one plot height for every chart that sits side by side
 
 export default function EvidencePage() {
   const { lang } = useLang();
@@ -62,30 +63,33 @@ export default function EvidencePage() {
 
             <div className="row">
               <section className="card" aria-label="Daily rank IC">
-                <div className="card-head"><h2>{m.icFreq === "monthly" ? <L en="Rank IC by month" bn="মাসভিত্তিক র‍্যাঙ্ক আইসি" /> : <L en="Daily rank IC" bn="দৈনিক র‍্যাঙ্ক আইসি" />}</h2><span className="en muted" style={{ fontSize: 12 }}>Mean {g.ic_mean.toFixed(3)} · positive {Math.round(g.ic_positive_share * 100)}% of days{m.icFreq === "monthly" ? " · bars are monthly means" : ""}</span></div>
-                <div style={{ marginTop: 14 }}>
-                  <ZeroBars values={m.icSeries.map((d) => d.ic)} labels={m.icSeries.map((d) => d.date)} fmt={(v) => v.toFixed(3)} meanLine={g.ic_mean} />
+                <div className="card-head"><h2>{m.icFreq === "monthly" ? <L en="Rank IC by month" bn="মাসভিত্তিক র‍্যাঙ্ক আইসি" /> : <L en="Daily rank IC" bn="দৈনিক র‍্যাঙ্ক আইসি" />}</h2><span className="en muted" style={{ fontSize: 12 }}>Mean {g.ic_mean.toFixed(3)} · positive {Math.round(g.ic_positive_share * 100)}% of days</span></div>
+                <div className="chartbox">
+                  <ZeroBars height={CHART_H} values={m.icSeries.map((d) => d.ic)} labels={m.icSeries.map((d) => d.date)} fmt={(v) => v.toFixed(3)} meanLine={g.ic_mean} />
                   <div className="axis"><span><V p={dateLabel(m.icSeries[0].date)} /></span><span><V p={dateLabel(m.icSeries[m.icSeries.length - 1].date)} /></span></div>
                 </div>
-                <p className="note"><L en={`Correlation between each day's scores and the next ${m.config.horizon} sessions' excess returns. Above zero: the ranking pointed the right way. Dashed line: mean.`} bn="প্রতিদিনের স্কোর বনাম পরের সেশনগুলোর অতিরিক্ত রিটার্নের সম্পর্ক। শূন্যের ওপরে মানে র‍্যাঙ্কিং ঠিক দিকে ছিল।" /></p>
+                <p className="note"><L en={`Correlation between each day's scores and the next ${m.config.horizon} sessions' excess returns${m.icFreq === "monthly" ? ", averaged by month" : ""}. Above zero: the ranking pointed the right way. Dashed line: mean.`} bn="প্রতিদিনের স্কোর বনাম পরের সেশনগুলোর অতিরিক্ত রিটার্নের সম্পর্ক। শূন্যের ওপরে মানে র‍্যাঙ্কিং ঠিক দিকে ছিল।" /></p>
               </section>
 
               <section className="card" aria-label="Returns by quintile">
                 <div className="card-head"><h2><L en="Excess return by score quintile" bn="স্কোর পঞ্চমাংশে রিটার্ন" /></h2>
                   <span className="legend"><span><span className="sw" style={{ background: "#262B6B" }} />LightGBM</span><span><span className="sw" style={{ background: "#C3C7E8", border: "1px solid #8F95C9" }} />Scorecard</span></span></div>
-                <div style={{ marginTop: 14 }}>
+                <div className="chartbox">
                   {(() => {
                     const qs = [1, 2, 3, 4, 5];
-                    const mx = Math.max(...qs.flatMap((q) => [Math.abs(g.quintile_excess[q]), Math.abs(c.quintile_excess[q])]));
-                    const bar = (v: number, up: boolean, fill: string, border?: string) => (
-                      <span style={{ flex: 1, height: (v > 0) === up && v !== 0 ? `${(Math.abs(v) / mx) * 100}%` : 0, background: fill, border: border && v !== 0 && (v > 0) === up ? `1px solid ${border}` : undefined }} title={`${(v * 100).toFixed(2)}%`} />
-                    );
+                    const all = qs.flatMap((q) => [g.quintile_excess[q], c.quintile_excess[q]]);
+                    const up = Math.max(0, ...all), dn = Math.max(0, ...all.map((v) => -v));
+                    const topH = Math.round((CHART_H * up) / (up + dn || 1));
+                    const bar = (v: number, pos: boolean, fill: string, border?: string) => {
+                      const on = v !== 0 && (v > 0) === pos;
+                      return <span style={{ flex: 1, height: on ? `${(Math.abs(v) / (pos ? up : dn)) * 100}%` : 0, background: fill, border: border && on ? `1px solid ${border}` : undefined, boxSizing: "border-box" }} title={`${(v * 100).toFixed(2)}%`} />;
+                    };
                     return (
-                      <div style={{ height: 220, display: "flex", flexDirection: "column" }}>
-                        <div style={{ height: 110, display: "flex", gap: 18, alignItems: "flex-end", borderBottom: "1px solid #0F2A22", padding: "0 10px" }}>
+                      <div style={{ height: CHART_H, display: "flex", flexDirection: "column" }}>
+                        <div style={{ height: topH, display: "flex", gap: 18, alignItems: "flex-end", borderBottom: "1px solid #0F2A22", padding: "0 10px" }}>
                           {qs.map((q) => <span key={q} style={{ flex: 1, display: "flex", gap: 3, alignItems: "flex-end", height: "100%" }}>{bar(g.quintile_excess[q], true, "#262B6B")}{bar(c.quintile_excess[q], true, "#C3C7E8", "#8F95C9")}</span>)}
                         </div>
-                        <div style={{ height: 110, display: "flex", gap: 18, alignItems: "flex-start", padding: "0 10px" }}>
+                        <div style={{ height: CHART_H - topH, display: "flex", gap: 18, alignItems: "flex-start", padding: "0 10px" }}>
                           {qs.map((q) => <span key={q} style={{ flex: 1, display: "flex", gap: 3, alignItems: "flex-start", height: "100%" }}>{bar(g.quintile_excess[q], false, "#262B6B")}{bar(c.quintile_excess[q], false, "#C3C7E8", "#8F95C9")}</span>)}
                         </div>
                       </div>
@@ -100,9 +104,9 @@ export default function EvidencePage() {
             <div className="row">
               <section className="card" aria-label="Hit rate by decile">
                 <div className="card-head"><h2><L en="Where the odds come from" bn="আস্থা কোথা থেকে আসে" /></h2><span className="en muted" style={{ fontSize: 12 }}>% beating the market, by score decile</span></div>
-                <div style={{ display: "grid", gridTemplateColumns: "40px minmax(0,1fr)", marginTop: 14 }}>
-                  <div className="num muted" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", fontSize: 12, height: 180 }}><span><V p={pct(0.6, 0)} /></span><span><V p={pct(0.45, 0)} /></span><span><V p={pct(0.3, 0)} /></span></div>
-                  <div className="bars" style={{ height: 180, gap: 8, borderBottom: "1px solid #0F2A22", position: "relative" }}>
+                <div className="chartbox" style={{ display: "grid", gridTemplateColumns: "40px minmax(0,1fr)" }}>
+                  <div className="num muted" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", fontSize: 12, height: CHART_H }}><span><V p={pct(0.6, 0)} /></span><span><V p={pct(0.45, 0)} /></span><span><V p={pct(0.3, 0)} /></span></div>
+                  <div className="bars" style={{ height: CHART_H, gap: 8, borderBottom: "1px solid #0F2A22", position: "relative" }}>
                     <span style={{ position: "absolute", left: 0, right: 0, bottom: "66.7%", borderTop: "1px dashed #0F2A22", flex: "none" }} />
                     {m.calibration.map((d) => (
                       <span key={d.decile} title={`Decile ${d.decile}: ${(d.hitRate * 100).toFixed(1)}% (n=${d.n})`}
@@ -118,17 +122,24 @@ export default function EvidencePage() {
               <section className="card" aria-label="Backtest">
                 <div className="card-head"><h2><L en="If you had traded it" bn="লেনদেন করলে কী হতো" /></h2>
                   <span className="legend"><span><span className="sw" style={{ height: 2, background: "#262B6B" }} />LightGBM net</span><span><span className="sw" style={{ height: 2, background: "#1F7A55" }} />Scorecard net</span><span><span className="sw" style={{ height: 0, borderTop: "2px dashed #4A6458" }} />Market</span></span></div>
-                <div style={{ marginTop: 8 }}>
-                  <LineChart ariaLabel="Cumulative return of top-decile portfolios versus the market" height={200}
+                <div className="chartbox">
+                  <LineChart ariaLabel="Cumulative return of top-decile portfolios versus the market" height={CHART_H + 26}
                     labels={["Start", ...m.backtest.gbm.map((r) => dateLabel(r.date).en)]}
-                    yFmt={(v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}%`}
+                    yFmt={(v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(0)}%`}
                     series={[
                       { name: "Market", color: "#4A6458", dash: "5 4", values: [0, ...m.backtest.gbm.map((r) => (r.cum_bench - 1) * 100)] },
                       { name: "Scorecard net", color: "#1F7A55", values: [0, ...m.backtest.card.map((r) => (r.cum_net - 1) * 100)] },
                       { name: "LightGBM net", color: "#262B6B", values: [0, ...m.backtest.gbm.map((r) => (r.cum_net - 1) * 100)] },
                     ]} />
                 </div>
-                <div className="tbl" style={{ marginTop: 8 }}>
+                <p className="note">Cumulative return after costs of the top decile, rebalanced every {m.config.horizon} sessions, against the equal-weight market.</p>
+              </section>
+            </div>
+
+            <div className="row">
+              <section className="card" aria-label="Backtest in numbers">
+                <div className="card-head"><h2><L en="Backtest in numbers" bn="ব্যাকটেস্টের হিসাব" /></h2><span className="en muted" style={{ fontSize: 12 }}>{g.bt_years ? `${g.bt_years.toFixed(1)} years out of sample` : "out of sample"}</span></div>
+                <div className="tbl" style={{ marginTop: 12 }}>
                   <table>
                     <thead><tr><th><L en="Metric" bn="মাপকাঠি" /></th><th className="r en">LightGBM</th><th className="r en">Scorecard</th></tr></thead>
                     <tbody>
@@ -138,44 +149,20 @@ export default function EvidencePage() {
                         [{ en: "Equal-weight market", bn: "সমান-ওজনের বাজার" }, g.bt_bench_total, c.bt_bench_total],
                         [{ en: "Average turnover", bn: "গড় টার্নওভার" }, g.bt_avg_turnover, c.bt_avg_turnover],
                         [{ en: "Max drawdown, net", bn: "সর্বোচ্চ পতন" }, g.bt_max_drawdown_net, c.bt_max_drawdown_net],
-                        ...((g.bt_years ?? 0) >= 1 ? [
+                        ...((g.bt_years ?? 0) >= 0.5 ? [
                           [{ en: "Annualised, net", bn: "বার্ষিক, খরচের পরে" }, g.bt_ann_net ?? 0, c.bt_ann_net ?? 0],
                           [{ en: "Annualised, market", bn: "বার্ষিক, বাজার" }, g.bt_ann_bench ?? 0, c.bt_ann_bench ?? 0],
                         ] : []),
                       ].map(([lab, a, b]) => (
                         <tr key={(lab as { en: string }).en}><td><L p={lab as { en: string; bn: string }} /></td><td className="r num">{P(a as number, 1, (lab as { en: string }).en !== "Average turnover")}</td><td className="r num">{P(b as number, 1, (lab as { en: string }).en !== "Average turnover")}</td></tr>
                       ))}
-                      {(g.bt_years ?? 0) >= 1 && (
+                      {(g.bt_years ?? 0) >= 0.5 && (
                         <tr><td><L en="Information ratio vs market" bn="ইনফরমেশন রেশিও" /></td><td className="r num-en">{(g.bt_info_ratio_net ?? 0).toFixed(2)}</td><td className="r num-en">{(c.bt_info_ratio_net ?? 0).toFixed(2)}</td></tr>
                       )}
                     </tbody>
                   </table>
                 </div>
-                <p className="note">{g.bt_years ? `${g.bt_years.toFixed(1)} years out of sample. ` : ""}Top decile, rebalanced every {m.config.horizon} sessions, entry at next open, {pct(m.config.roundTripCost, 2).en} round-trip cost ({m.config.commissionBps} bps commission + {m.config.slippageBps} bps slippage per side).</p>
-              </section>
-            </div>
-
-            <div className="row">
-              <section className="card" aria-label="Walk-forward">
-                <div className="card-head"><h2><L en="How it was tested" bn="কীভাবে পরীক্ষা করা হয়েছে" /> <span className="en-inline">· purged walk-forward</span></h2>
-                  <span className="legend"><span><span className="sw" style={{ background: "#0F3A2C" }} />Train</span><span><span className="sw purge" style={{ border: "1px solid #9DB5A8" }} />Purged</span><span><span className="sw" style={{ background: "#262B6B" }} />Test</span></span></div>
-                <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {(m.folds.length > 12 ? Array.from({ length: 12 }, (_, i) => m.folds[Math.round((i * (m.folds.length - 1)) / 11)]) : m.folds).map((f) => {
-                    const a = 0, b = (days(t0!, f.train_end) / span) * 100, ts = (days(t0!, f.test_start) / span) * 100, te = (days(t0!, f.test_end) / span) * 100;
-                    return (
-                      <div key={f.fold} style={{ display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 12, alignItems: "center" }} title={`Train ${f.train_start} to ${f.train_end} (${f.train_rows} rows), test ${f.test_start} to ${f.test_end}`}>
-                        <span className="en muted" style={{ fontSize: 13 }}>Fold {f.fold + 1}</span>
-                        <span style={{ height: 14, position: "relative", background: "var(--ground)" }}>
-                          <span style={{ position: "absolute", left: `${a}%`, width: `${b - a}%`, top: 0, bottom: 0, background: "#0F3A2C" }} />
-                          <span className="purge" style={{ position: "absolute", left: `${b}%`, width: `${ts - b}%`, top: 0, bottom: 0 }} />
-                          <span style={{ position: "absolute", left: `${ts}%`, width: `${Math.max(1, te - ts)}%`, top: 0, bottom: 0, background: "#262B6B" }} />
-                        </span>
-                      </div>
-                    );
-                  })}
-                  <div style={{ display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 12 }}><span /><span className="axis" style={{ paddingTop: 0 }}><span><V p={dateLabel(t0!)} /></span><span><V p={dateLabel(t1!)} /></span></span></div>
-                </div>
-                <p className="note">{m.folds.length > 12 && <span className="en">{m.folds.length} folds in total, 12 shown. </span>}<L en="Training rows whose label window reaches the test block are removed, so no future return leaks into training." bn="যে প্রশিক্ষণ সারির রিটার্ন-জানালা পরীক্ষার সময়ে পৌঁছায়, তা বাদ দেওয়া হয়, তাই ভবিষ্যতের তথ্য ফাঁস হয় না।" /></p>
+                <p className="note">Entry at next open, {pct(m.config.roundTripCost, 2).en} round-trip cost ({m.config.commissionBps} bps commission + {m.config.slippageBps} bps slippage per side).</p>
               </section>
 
               <section className="card" aria-label="Feature families">
@@ -187,7 +174,7 @@ export default function EvidencePage() {
                   return (
                     <div style={{ marginTop: 12 }}>
                       {e.map(([k, v]) => (
-                        <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0,170px) minmax(0,1fr) 48px", gap: 12, alignItems: "center", padding: "8px 0", borderTop: "1px solid var(--rule)" }}>
+                        <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0,170px) minmax(0,1fr) 48px", gap: 12, alignItems: "center", padding: "11px 0", borderTop: "1px solid var(--rule)" }}>
                           <span style={{ fontSize: 14 }}><L p={FAMILY[k] ?? { en: k, bn: k }} /></span>
                           <span style={{ height: 10, background: "var(--ground)" }}><span style={{ display: "block", height: "100%", width: `${(v / mx) * 100}%`, background: "#262B6B" }} /></span>
                           <span className="num" style={{ textAlign: "right", fontSize: 14 }}><V p={pct(v / tot, 0)} /></span>
@@ -199,6 +186,28 @@ export default function EvidencePage() {
                 <p className="note">Validated on data from {dateLabel(m.quality.start).en} to {dateLabel(m.quality.end).en} ({m.quality.trading_days} sessions). Every metric has wide error bars until more history is loaded.</p>
               </section>
             </div>
+
+            <section className="card" aria-label="Walk-forward">
+              <div className="card-head"><h2><L en="How it was tested" bn="কীভাবে পরীক্ষা করা হয়েছে" /> <span className="en-inline">· purged walk-forward</span></h2>
+                <span className="legend"><span><span className="sw" style={{ background: "#0F3A2C" }} />Train</span><span><span className="sw purge" style={{ border: "1px solid #9DB5A8" }} />Purged</span><span><span className="sw" style={{ background: "#262B6B" }} />Test</span></span></div>
+              <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                {(m.folds.length > 12 ? Array.from({ length: 12 }, (_, i) => m.folds[Math.round((i * (m.folds.length - 1)) / 11)]) : m.folds).map((f) => {
+                  const a = 0, b = (days(t0!, f.train_end) / span) * 100, ts = (days(t0!, f.test_start) / span) * 100, te = (days(t0!, f.test_end) / span) * 100;
+                  return (
+                    <div key={f.fold} style={{ display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 12, alignItems: "center" }} title={`Train ${f.train_start} to ${f.train_end} (${f.train_rows} rows), test ${f.test_start} to ${f.test_end}`}>
+                      <span className="en muted" style={{ fontSize: 13 }}>Fold {f.fold + 1}</span>
+                      <span style={{ height: 14, position: "relative", background: "var(--ground)" }}>
+                        <span style={{ position: "absolute", left: `${a}%`, width: `${b - a}%`, top: 0, bottom: 0, background: "#0F3A2C" }} />
+                        <span className="purge" style={{ position: "absolute", left: `${b}%`, width: `${ts - b}%`, top: 0, bottom: 0 }} />
+                        <span style={{ position: "absolute", left: `${ts}%`, width: `${Math.max(1, te - ts)}%`, top: 0, bottom: 0, background: "#262B6B" }} />
+                      </span>
+                    </div>
+                  );
+                })}
+                <div style={{ display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 12 }}><span /><span className="axis" style={{ paddingTop: 0 }}><span><V p={dateLabel(t0!)} /></span><span><V p={dateLabel(t1!)} /></span></span></div>
+              </div>
+              <p className="note">{m.folds.length > 12 && <span className="en">{m.folds.length} folds in total, 12 shown. </span>}<L en="Training rows whose label window reaches the test block are removed, so no future return leaks into training." bn="যে প্রশিক্ষণ সারির রিটার্ন-জানালা পরীক্ষার সময়ে পৌঁছায়, তা বাদ দেওয়া হয়, তাই ভবিষ্যতের তথ্য ফাঁস হয় না।" /></p>
+            </section>
           </>
         )}
       </div>

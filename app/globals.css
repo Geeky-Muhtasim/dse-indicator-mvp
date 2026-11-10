@@ -250,3 +250,15 @@ td.r, th.r { text-align: right; }
 .content { max-width: none; }
 @media (min-width: 2200px) { .content { max-width: 2000px; } }
 @media (min-width: 1600px) { .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* ---------------------------------------------------------------- consistent card rows
+   Rows are grids, so side-by-side cards always share a width and a height. Cards are flex
+   columns and their closing note sits at the bottom, so footnotes line up across a row. */
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr)); gap: 20px; align-items: stretch; }
+.row > * { flex: none; min-width: 0; }
+.row-wide-left { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1180px) { .row-wide-left { grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr); } }
+.card { display: flex; flex-direction: column; }
+.card > .note:last-child { margin-top: auto; padding-top: 12px; }
+.chartbox { margin-top: 14px; }
+@media (max-width: 1023px) { .row { grid-template-columns: minmax(0, 1fr); } }
